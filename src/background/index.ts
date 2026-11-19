@@ -1,0 +1,3 @@
+// Background service worker.
+
+export {};
