@@ -34,3 +34,12 @@ export function isHookMessage(value: unknown): value is HookMessage {
   const msg = value as Partial<HookMessage>;
   return msg.source === 'leetlink-hook' && msg.type === 'submission' && typeof msg.payload === 'object';
 }
+
+/** Problem metadata needed for naming and README content. */
+export interface ProblemInfo {
+  frontendId: string;
+  title: string;
+  titleSlug: string;
+  difficulty: string;
+  topicTags: string[];
+}
