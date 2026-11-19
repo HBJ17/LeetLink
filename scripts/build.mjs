@@ -1,6 +1,6 @@
 // Builds each extension entry point as a standalone IIFE bundle.
 // Content scripts cannot be ES modules, so every entry is bundled on its own.
-
+import { copyFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { build } from 'vite';
 
@@ -10,6 +10,8 @@ const watch = process.argv.includes('--watch');
 
 const entries = {
   background: 'src/background/index.ts',
+  content: 'src/content/index.ts',
+  hook: 'src/content/hook.ts',
 };
 
 let first = true;
@@ -36,4 +38,6 @@ for (const [name, entry] of Object.entries(entries)) {
   first = false;
 }
 
+await mkdir(outDir, { recursive: true });
+await copyFile(resolve(root, 'manifest.json'), resolve(outDir, 'manifest.json'));
 console.log(watch ? 'Watching for changes...' : `Built extension into ${outDir}`);
