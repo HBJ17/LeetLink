@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.zip
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# Local planning notes
+PLAN.md
