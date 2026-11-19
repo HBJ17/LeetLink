@@ -43,3 +43,17 @@ export interface ProblemInfo {
   difficulty: string;
   topicTags: string[];
 }
+
+export interface PushRequest {
+  problem: ProblemInfo;
+  submission: SubmissionResult;
+  message: string;
+  /** Notes for README.md, or null to commit only the solution file. */
+  notes: string | null;
+}
+
+export type PushResponse =
+  | { ok: true; commitUrl: string; path: string }
+  | { ok: false; error: string };
+
+export type BackgroundRequest = { type: 'push'; payload: PushRequest };
