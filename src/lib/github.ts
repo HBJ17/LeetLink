@@ -44,6 +44,38 @@ export class EmptyRepositoryError extends Error {
   override name = 'EmptyRepositoryError';
 }
 
+export interface RepoRef {
+  owner: string;
+  repo: string;
+}
+
+const NAME = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * Reads `owner/repo` from a repository link. Accepts web links, clone URLs
+ * (HTTPS or SSH) and the bare `owner/repo` form. Returns null when invalid.
+ */
+export function parseRepoLink(link: string): RepoRef | null {
+  let path = link.trim();
+  const ssh = /^git@github\.com:(.+)$/i.exec(path);
+  if (ssh?.[1]) {
+    path = ssh[1];
+  } else if (/^(https?:\/\/)?(www\.)?github\.com\//i.test(path)) {
+    path = path.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, '');
+  } else if (path.includes('://')) {
+    return null;
+  }
+
+  const [owner, rawRepo] = path.split(/[/?#]/);
+  const repo = rawRepo?.replace(/\.git$/i, '');
+  if (!owner || !repo || !NAME.test(owner) || !NAME.test(repo)) return null;
+  return { owner, repo };
+}
+
+export function repoWebUrl({ owner, repo }: RepoRef): string {
+  return `https://github.com/${owner}/${repo}`;
+}
+
 function utf8ToBase64(text: string): string {
   const bytes = new TextEncoder().encode(text);
   let binary = '';

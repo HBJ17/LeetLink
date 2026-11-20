@@ -38,6 +38,30 @@ for (const [name, entry] of Object.entries(entries)) {
   first = false;
 }
 
+// Extension pages (options, later the popup) are plain HTML entries and can
+// use ES modules, so they share one build.
+const pages = {
+  options: 'src/options/index.html',
+};
+
+await build({
+  root: resolve(root, 'src'),
+  base: './',
+  configFile: false,
+  logLevel: 'warn',
+  build: {
+    outDir,
+    emptyOutDir: false,
+    target: 'chrome111',
+    minify: false,
+    sourcemap: watch ? 'inline' : false,
+    watch: watch ? {} : null,
+    rollupOptions: {
+      input: Object.fromEntries(Object.entries(pages).map(([name, page]) => [name, resolve(root, page)])),
+    },
+  },
+});
+
 await mkdir(outDir, { recursive: true });
 await copyFile(resolve(root, 'manifest.json'), resolve(outDir, 'manifest.json'));
 console.log(watch ? 'Watching for changes...' : `Built extension into ${outDir}`);

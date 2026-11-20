@@ -8,6 +8,10 @@ function isBackgroundRequest(value: unknown): value is BackgroundRequest {
   return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'push';
 }
 
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === chrome.runtime.OnInstalledReason.INSTALL) void chrome.runtime.openOptionsPage();
+});
+
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r: PushResponse) => void) => {
   if (sender.id !== chrome.runtime.id || !isBackgroundRequest(message)) return false;
 

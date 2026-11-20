@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LeetLink Settings</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Leet<span>Link</span></h1>
+        <p class="tagline">Push your LeetCode submissions to GitHub.</p>
+      </header>
+
+      <form id="settings" novalidate>
+        <section>
+          <h2>Repository</h2>
+
+          <label for="repo">GitHub repository link</label>
+          <input id="repo" name="repo" type="text" placeholder="https://github.com/you/leetcode" autocomplete="off" spellcheck="false" required />
+
+          <label for="token">Personal access token</label>
+          <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" />
+          <p class="hint">
+            Use a fine-grained token limited to this repository, with
+            <strong>Contents: Read and write</strong> permission. It is stored only in this browser.
+          </p>
+
+          <label for="branch">Branch <span class="optional">(optional)</span></label>
+          <input id="branch" name="branch" type="text" placeholder="Default branch" autocomplete="off" spellcheck="false" />
+        </section>
+
+        <div class="actions">
+          <p id="status" class="status" role="status"></p>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>
