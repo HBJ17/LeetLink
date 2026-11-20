@@ -10,7 +10,7 @@ import {
   type PushResponse,
   type SubmissionResult,
 } from '../lib/messages';
-import { defaultCommitMessage, statusLabel } from '../lib/naming';
+import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage } from '../lib/naming';
 import { getSettings } from '../lib/storage';
 import { openCommitDialog, showPushNotice, type CommitOutcome } from './dialog';
 
@@ -27,20 +27,19 @@ async function handleSubmission(submission: SubmissionResult): Promise<void> {
   if (!accepted && settings.pushMode === 'accepted') return;
 
   const problem = await fetchProblem(submission.titleSlug);
-  const status = statusLabel(submission.statusCode, submission.statusMsg);
-  const details = [submission.statusMsg, submission.lang, submission.runtime, submission.memory].filter(Boolean);
-
-  const defaultMessage = defaultCommitMessage(problem, submission.runtime, status);
+  const message = renderCommitMessage(settings.messageTemplate || DEFAULT_MESSAGE_TEMPLATE, { problem, submission });
 
   if (!settings.confirmBeforeCommit) {
-    showPushNotice(defaultMessage, push(problem, submission, defaultMessage, null));
+    showPushNotice(message, push(problem, submission, message, null));
     return;
   }
 
+  const details = [submission.statusMsg, submission.lang, submission.runtime, submission.memory].filter(Boolean);
   await openCommitDialog({
     heading: `${problem.frontendId}. ${problem.title}`,
     subheading: details.join(' · '),
-    defaultMessage,
+    defaultMessage: message,
+    notesByDefault: settings.notesByDefault,
     onCommit: ({ message, notes }) => push(problem, submission, message, notes),
   });
 }

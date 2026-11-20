@@ -1,7 +1,9 @@
 // Settings page. The repository and token are saved only once the token is
-// confirmed to have write access; pushing preferences save on change.
+// confirmed to have write access; everything else saves on change.
 
 import { GitHubClient, parseRepoLink, repoWebUrl } from '../lib/github';
+import { ACCEPTED_STATUS } from '../lib/messages';
+import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage, TEMPLATE_PLACEHOLDERS, type MessageContext } from '../lib/naming';
 import { getSettings, updateSettings, type Settings } from '../lib/storage';
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -18,6 +20,32 @@ const status = byId<HTMLParagraphElement>('status');
 const saveButton = form.querySelector<HTMLButtonElement>('button[type="submit"]');
 const pushModeInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="pushMode"]'));
 const confirmInput = byId<HTMLInputElement>('confirm');
+const templateInput = byId<HTMLInputElement>('template');
+const templatePreview = byId<HTMLElement>('template-preview');
+const notesInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="notesDefault"]'));
+
+/** Sample submission for the template preview. */
+const SAMPLE: MessageContext = {
+  problem: { frontendId: '1', title: 'Two Sum', titleSlug: 'two-sum', difficulty: 'Easy' },
+  submission: { lang: 'python3', runtime: '3 ms', memory: '17.4 MB', statusCode: ACCEPTED_STATUS, statusMsg: 'Accepted' },
+};
+
+function renderPlaceholders(): void {
+  const list = byId<HTMLDListElement>('placeholders');
+  for (const [key, description] of Object.entries(TEMPLATE_PLACEHOLDERS)) {
+    const term = document.createElement('dt');
+    const code = document.createElement('code');
+    code.textContent = `{${key}}`;
+    term.append(code);
+    const detail = document.createElement('dd');
+    detail.textContent = description;
+    list.append(term, detail);
+  }
+}
+
+function updatePreview(): void {
+  templatePreview.textContent = renderCommitMessage(templateInput.value.trim() || DEFAULT_MESSAGE_TEMPLATE, SAMPLE);
+}
 
 function setStatus(text: string, kind: 'info' | 'ok' | 'error' = 'info'): void {
   status.className = kind === 'info' ? 'status' : `status ${kind}`;
@@ -31,14 +59,21 @@ function render(settings: Settings): void {
   tokenInput.placeholder = settings.token ? 'Saved. Leave blank to keep it.' : 'github_pat_...';
   for (const radio of pushModeInputs) radio.checked = radio.value === settings.pushMode;
   confirmInput.checked = settings.confirmBeforeCommit;
+  templateInput.value = settings.messageTemplate || DEFAULT_MESSAGE_TEMPLATE;
+  for (const radio of notesInputs) radio.checked = (radio.value === 'write') === settings.notesByDefault;
+  updatePreview();
 }
 
-/** Pushing preferences save as soon as they change; they do not need the repository check. */
+/** Preferences save as soon as they change; they do not need the repository check. */
 async function savePreferences(): Promise<void> {
   const mode = pushModeInputs.find((r) => r.checked)?.value;
+  const template = templateInput.value.trim();
   await updateSettings({
     pushMode: mode === 'all' ? 'all' : 'accepted',
     confirmBeforeCommit: confirmInput.checked,
+    // The default is stored as empty so a future change to it applies automatically.
+    messageTemplate: template === DEFAULT_MESSAGE_TEMPLATE ? '' : template,
+    notesByDefault: notesInputs.some((r) => r.checked && r.value === 'write'),
   });
   setStatus('Preferences saved.', 'ok');
 }
@@ -82,10 +117,20 @@ form.addEventListener('submit', (event) => {
     });
 });
 
-for (const input of [...pushModeInputs, confirmInput]) {
+for (const input of [...pushModeInputs, confirmInput, templateInput, ...notesInputs]) {
   input.addEventListener('change', () => {
     savePreferences().catch((err: unknown) => setStatus(String(err), 'error'));
   });
 }
 
+templateInput.addEventListener('input', updatePreview);
+templateInput.addEventListener('keydown', (event) => {
+  // Enter would submit the repository form; save the template instead.
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    templateInput.blur();
+  }
+});
+
+renderPlaceholders();
 getSettings().then(render, (err: unknown) => setStatus(String(err), 'error'));

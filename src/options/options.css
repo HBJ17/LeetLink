@@ -86,6 +86,32 @@ input:focus {
   border-color: var(--accent);
 }
 
+code {
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--accent);
+}
+
+details {
+  margin: 8px 0 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+summary {
+  cursor: pointer;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+}
+
+dd {
+  margin: 0;
+}
+
 fieldset {
   margin: 0;
   padding: 0;
@@ -132,8 +158,12 @@ label.check input {
 }
 
 .status {
+  position: sticky;
+  bottom: 0;
   min-height: 20px;
   margin: 0;
+  padding: 10px 0;
+  background: var(--bg);
   font-size: 13px;
   color: var(--muted);
 }

@@ -15,6 +15,8 @@ export interface CommitDialogOptions {
   /** Short line under the heading, e.g. `Accepted · Python3 · 3 ms`. */
   subheading: string;
   defaultMessage: string;
+  /** Open with the notes box shown instead of "No README". */
+  notesByDefault?: boolean;
   /** Performs the push. The dialog shows progress and the result. */
   onCommit: (draft: CommitDraft) => Promise<CommitOutcome>;
 }
@@ -136,13 +138,15 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
   let writeNotes = false;
   let busy = false;
 
-  function setNotesMode(write: boolean): void {
+  function setNotesMode(write: boolean, focus = true): void {
     writeNotes = write;
     noneButton.setAttribute('aria-pressed', String(!write));
     writeButton.setAttribute('aria-pressed', String(write));
     notesInput.hidden = !write;
-    if (write) notesInput.focus();
+    if (write && focus) notesInput.focus();
   }
+
+  setNotesMode(options.notesByDefault ?? false, false);
 
   function setStatus(text: string, kind: 'info' | 'ok' | 'error' = 'info'): void {
     status.className = kind === 'info' ? 'status' : `status ${kind}`;

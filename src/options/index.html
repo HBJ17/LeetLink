@@ -55,6 +55,30 @@
             <span>Confirm before each commit <span class="optional">(shows the commit dialog; when off, commits use the default message and no README)</span></span>
           </label>
         </section>
+
+        <section>
+          <h2>Commit message and notes</h2>
+
+          <label for="template">Commit message template</label>
+          <input id="template" name="template" type="text" autocomplete="off" spellcheck="false" />
+          <p class="hint">Preview: <code id="template-preview"></code></p>
+          <details>
+            <summary>Placeholders</summary>
+            <dl id="placeholders"></dl>
+          </details>
+
+          <fieldset>
+            <legend>README in the commit dialog</legend>
+            <label class="radio">
+              <input type="radio" name="notesDefault" value="none" />
+              <span>Start with No README</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="notesDefault" value="write" />
+              <span>Start with the notes box open <span class="optional">(notes are still optional)</span></span>
+            </label>
+          </fieldset>
+        </section>
       </form>
       <p id="status" class="status" role="status"></p>
     </main>

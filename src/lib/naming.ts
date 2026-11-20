@@ -5,7 +5,7 @@
 //     two-sum_py_2.py
 //     README.md
 
-import { ACCEPTED_STATUS, type ProblemInfo } from './messages';
+import { ACCEPTED_STATUS, type ProblemInfo, type SubmissionResult } from './messages';
 
 interface LanguageInfo {
   /** Short tag used inside the file name. */
@@ -109,14 +109,71 @@ export function compactRuntime(runtime: string | null): string | null {
   return compact || null;
 }
 
-/** Default live commit message, e.g. `0001_two-sum_3ms` or `0001_two-sum_wrong-answer`. */
-export function defaultCommitMessage(
-  problem: Pick<ProblemInfo, 'frontendId' | 'titleSlug'>,
-  runtime: string | null,
-  status: string | null = null,
-): string {
-  const base = folderName(problem);
-  if (status) return `${base}_${status}`;
-  const rt = compactRuntime(runtime);
-  return rt ? `${base}_${rt}` : base;
+/** Placeholders a commit message template can use, with what each one becomes. */
+export const TEMPLATE_PLACEHOLDERS: Readonly<Record<string, string>> = {
+  number: 'Problem number, zero padded (0001)',
+  id: 'Problem number as shown on LeetCode (1)',
+  slug: 'Problem slug (two-sum)',
+  title: 'Problem title (Two Sum)',
+  difficulty: 'Easy, Medium or Hard',
+  lang: 'Language (python3)',
+  runtime: 'Runtime (3ms)',
+  memory: 'Memory (17.4MB)',
+  status: 'Result (accepted, wrong-answer)',
+  result: 'Runtime when accepted, otherwise the result',
+};
+
+export const DEFAULT_MESSAGE_TEMPLATE = '{number}_{slug}_{result}';
+
+export interface MessageContext {
+  problem: Pick<ProblemInfo, 'frontendId' | 'title' | 'titleSlug' | 'difficulty'>;
+  submission: Pick<SubmissionResult, 'lang' | 'runtime' | 'memory' | 'statusCode' | 'statusMsg'>;
+}
+
+/** Marks a placeholder that had no value while the template is being cleaned up. */
+const EMPTY = '\u0000';
+/** One or more empty placeholders plus the separators around and between them. */
+const EMPTY_WITH_SEPARATORS = /([ _.:|-]*)\u0000(?:[ _.:|-]*\u0000)*([ _.:|-]*)/g;
+
+/**
+ * Fills a commit message template, e.g. `{number}_{slug}_{result}` becomes
+ * `0001_two-sum_3ms`. A placeholder with no value is dropped along with the
+ * separator next to it, so a missing runtime gives `0001_two-sum`.
+ * Unknown placeholders are left as typed.
+ */
+export function renderCommitMessage(template: string, context: MessageContext): string {
+  const { problem, submission } = context;
+  const status = statusLabel(submission.statusCode, submission.statusMsg);
+  const runtime = compactRuntime(submission.runtime);
+  const values: Record<string, string | null> = {
+    number: paddedId(problem.frontendId),
+    id: problem.frontendId,
+    slug: problem.titleSlug,
+    title: problem.title,
+    difficulty: problem.difficulty,
+    lang: submission.lang,
+    runtime,
+    memory: compactRuntime(submission.memory),
+    status: status ?? 'accepted',
+    result: status ?? runtime,
+  };
+
+  const filled = template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? values[key] || EMPTY : match,
+  );
+  const cleaned = filled
+    .replace(EMPTY_WITH_SEPARATORS, (match: string, before: string, after: string, offset: number) => {
+      const atEdge = offset === 0 || offset + match.length === filled.length;
+      if (atEdge) return '';
+      return before && after ? before : before || after;
+    })
+    .split(EMPTY)
+    .join('')
+    .trim();
+  return cleaned || renderCommitMessage(DEFAULT_MESSAGE_TEMPLATE, context);
+}
+
+/** Commit message from the default template, e.g. `0001_two-sum_3ms` or `0001_two-sum_wrong-answer`. */
+export function defaultCommitMessage(context: MessageContext): string {
+  return renderCommitMessage(DEFAULT_MESSAGE_TEMPLATE, context);
 }

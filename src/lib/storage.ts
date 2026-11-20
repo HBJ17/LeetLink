@@ -12,6 +12,10 @@ export interface Settings {
   branch: string;
   pushMode: PushMode;
   confirmBeforeCommit: boolean;
+  /** Commit message template. Empty means the built-in default. */
+  messageTemplate: string;
+  /** Whether the commit dialog opens with the notes box shown. */
+  notesByDefault: boolean;
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = {
@@ -21,6 +25,8 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   branch: '',
   pushMode: 'accepted',
   confirmBeforeCommit: true,
+  messageTemplate: '',
+  notesByDefault: false,
 };
 
 const SETTINGS_KEY = 'settings';
