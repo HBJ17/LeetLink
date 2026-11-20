@@ -1,5 +1,5 @@
-// Settings page: connect a repository and token. Nothing is saved until the
-// token is confirmed to have write access to the repository.
+// Settings page. The repository and token are saved only once the token is
+// confirmed to have write access; pushing preferences save on change.
 
 import { GitHubClient, parseRepoLink, repoWebUrl } from '../lib/github';
 import { getSettings, updateSettings, type Settings } from '../lib/storage';
@@ -16,6 +16,8 @@ const tokenInput = byId<HTMLInputElement>('token');
 const branchInput = byId<HTMLInputElement>('branch');
 const status = byId<HTMLParagraphElement>('status');
 const saveButton = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+const pushModeInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="pushMode"]'));
+const confirmInput = byId<HTMLInputElement>('confirm');
 
 function setStatus(text: string, kind: 'info' | 'ok' | 'error' = 'info'): void {
   status.className = kind === 'info' ? 'status' : `status ${kind}`;
@@ -27,6 +29,18 @@ function render(settings: Settings): void {
   branchInput.value = settings.branch;
   tokenInput.value = '';
   tokenInput.placeholder = settings.token ? 'Saved. Leave blank to keep it.' : 'github_pat_...';
+  for (const radio of pushModeInputs) radio.checked = radio.value === settings.pushMode;
+  confirmInput.checked = settings.confirmBeforeCommit;
+}
+
+/** Pushing preferences save as soon as they change; they do not need the repository check. */
+async function savePreferences(): Promise<void> {
+  const mode = pushModeInputs.find((r) => r.checked)?.value;
+  await updateSettings({
+    pushMode: mode === 'all' ? 'all' : 'accepted',
+    confirmBeforeCommit: confirmInput.checked,
+  });
+  setStatus('Preferences saved.', 'ok');
 }
 
 async function save(): Promise<void> {
@@ -67,5 +81,11 @@ form.addEventListener('submit', (event) => {
       if (saveButton) saveButton.disabled = false;
     });
 });
+
+for (const input of [...pushModeInputs, confirmInput]) {
+  input.addEventListener('change', () => {
+    savePreferences().catch((err: unknown) => setStatus(String(err), 'error'));
+  });
+}
 
 getSettings().then(render, (err: unknown) => setStatus(String(err), 'error'));

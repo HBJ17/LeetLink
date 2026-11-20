@@ -29,13 +29,34 @@
 
           <label for="branch">Branch <span class="optional">(optional)</span></label>
           <input id="branch" name="branch" type="text" placeholder="Default branch" autocomplete="off" spellcheck="false" />
+
+          <div class="actions">
+            <button type="submit">Check and save</button>
+          </div>
         </section>
 
-        <div class="actions">
-          <p id="status" class="status" role="status"></p>
-          <button type="submit">Save</button>
-        </div>
+        <section>
+          <h2>Pushing</h2>
+
+          <fieldset>
+            <legend>Which submissions to push</legend>
+            <label class="radio">
+              <input type="radio" name="pushMode" value="accepted" />
+              <span>Accepted only</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="pushMode" value="all" />
+              <span>All submissions <span class="optional">(the result, e.g. wrong-answer, goes in the file name)</span></span>
+            </label>
+          </fieldset>
+
+          <label class="check">
+            <input id="confirm" name="confirm" type="checkbox" />
+            <span>Confirm before each commit <span class="optional">(shows the commit dialog; when off, commits use the default message and no README)</span></span>
+          </label>
+        </section>
       </form>
+      <p id="status" class="status" role="status"></p>
     </main>
     <script type="module" src="./options.ts"></script>
   </body>

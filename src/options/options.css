@@ -86,6 +86,39 @@ input:focus {
   border-color: var(--accent);
 }
 
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 13px;
+  color: #cfcfcf;
+}
+
+label.radio,
+label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: var(--text);
+  cursor: pointer;
+}
+
+label.check {
+  margin-top: 18px;
+}
+
+label.radio input,
+label.check input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
 .hint {
   margin: 6px 0 0;
   font-size: 12px;
@@ -94,13 +127,12 @@ input:focus {
 
 .actions {
   display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 16px;
+  margin-top: 18px;
 }
 
 .status {
-  flex: 1;
+  min-height: 20px;
   margin: 0;
   font-size: 13px;
   color: var(--muted);

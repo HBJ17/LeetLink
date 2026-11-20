@@ -12,7 +12,7 @@ import {
 } from '../lib/messages';
 import { defaultCommitMessage, statusLabel } from '../lib/naming';
 import { getSettings } from '../lib/storage';
-import { openCommitDialog, type CommitOutcome } from './dialog';
+import { openCommitDialog, showPushNotice, type CommitOutcome } from './dialog';
 
 async function push(problem: ProblemInfo, submission: SubmissionResult, message: string, notes: string | null): Promise<CommitOutcome> {
   const request: BackgroundRequest = { type: 'push', payload: { problem, submission, message, notes } };
@@ -30,10 +30,17 @@ async function handleSubmission(submission: SubmissionResult): Promise<void> {
   const status = statusLabel(submission.statusCode, submission.statusMsg);
   const details = [submission.statusMsg, submission.lang, submission.runtime, submission.memory].filter(Boolean);
 
+  const defaultMessage = defaultCommitMessage(problem, submission.runtime, status);
+
+  if (!settings.confirmBeforeCommit) {
+    showPushNotice(defaultMessage, push(problem, submission, defaultMessage, null));
+    return;
+  }
+
   await openCommitDialog({
     heading: `${problem.frontendId}. ${problem.title}`,
     subheading: details.join(' · '),
-    defaultMessage: defaultCommitMessage(problem, submission.runtime, status),
+    defaultMessage,
     onCommit: ({ message, notes }) => push(problem, submission, message, notes),
   });
 }
