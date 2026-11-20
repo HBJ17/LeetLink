@@ -1,6 +1,7 @@
-// Settings page: connect a repository and token.
+// Settings page: connect a repository and token. Nothing is saved until the
+// token is confirmed to have write access to the repository.
 
-import { parseRepoLink, repoWebUrl } from '../lib/github';
+import { GitHubClient, parseRepoLink, repoWebUrl } from '../lib/github';
 import { getSettings, updateSettings, type Settings } from '../lib/storage';
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -44,9 +45,17 @@ async function save(): Promise<void> {
     return;
   }
 
-  const saved = await updateSettings({ owner: ref.owner, repo: ref.repo, token, branch: branchInput.value.trim() });
+  const branch = branchInput.value.trim();
+  setStatus(`Checking access to ${ref.owner}/${ref.repo}...`);
+  const check = await new GitHubClient(token, ref.owner, ref.repo).verifyAccess(branch);
+
+  // Store the canonical owner/repo casing GitHub reports.
+  const [owner = ref.owner, repo = ref.repo] = check.repository.fullName.split('/');
+  const saved = await updateSettings({ owner, repo, token, branch });
   render(saved);
-  setStatus(`Connected to ${ref.owner}/${ref.repo}.`, 'ok');
+
+  const where = check.empty ? 'The repository is empty; the first push will create' : 'Pushing to';
+  setStatus(`Connected to ${check.repository.fullName}. ${where} branch "${check.branch}".`, 'ok');
 }
 
 form.addEventListener('submit', (event) => {

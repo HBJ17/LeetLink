@@ -1,7 +1,7 @@
 // Pushes one submission (and optional notes) to the connected repository.
 
-import { EmptyRepositoryError, GitHubClient, type FileChange } from '../lib/github';
-import { HttpError, RateLimitError } from '../lib/http';
+import { describeGitHubError, EmptyRepositoryError, GitHubClient, type FileChange } from '../lib/github';
+import { HttpError } from '../lib/http';
 import { problemUrl } from '../lib/leetcode';
 import type { ProblemInfo, PushRequest, PushResponse } from '../lib/messages';
 import { folderName, nextSequence, solutionFileName, statusLabel } from '../lib/naming';
@@ -18,26 +18,6 @@ function readmeContent(existing: string | null, problem: ProblemInfo, fileName: 
   const meta = [`[LeetCode](${problemUrl(problem.titleSlug)})`, problem.difficulty];
   if (problem.topicTags.length) meta.push(problem.topicTags.join(', '));
   return `# ${problem.frontendId}. ${problem.title}\n\n${meta.join(' · ')}\n\n${section}`;
-}
-
-function describeError(err: unknown, client: GitHubClient): string {
-  const repo = `${client.owner}/${client.repo}`;
-  if (err instanceof RateLimitError) return `GitHub ${err.message.toLowerCase()}. Try again later.`;
-  if (err instanceof HttpError) {
-    switch (err.status) {
-      case 0:
-        return err.message;
-      case 401:
-        return 'GitHub token is invalid or expired.';
-      case 403:
-        return `The token does not have write access to ${repo}.`;
-      case 404:
-        return `Repository ${repo} was not found, or the token cannot access it.`;
-      default:
-        return `GitHub error ${err.message}`;
-    }
-  }
-  return err instanceof Error ? err.message : String(err);
 }
 
 function isNotFastForward(err: unknown): boolean {
@@ -113,6 +93,6 @@ export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
       }
     }
   } catch (err) {
-    return { ok: false, error: describeError(err, client) };
+    return { ok: false, error: describeGitHubError(err, client.fullName) };
   }
 }

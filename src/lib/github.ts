@@ -2,9 +2,29 @@
 // A commit is built from blobs and a tree so several files land in one commit
 // and author/committer dates can be set.
 
-import { HttpError, request, type RequestOptions } from './http';
+import { HttpError, RateLimitError, request, type RequestOptions } from './http';
 
 const API = 'https://api.github.com';
+
+/** Turns a GitHub API failure into a message the user can act on. */
+export function describeGitHubError(err: unknown, repo: string): string {
+  if (err instanceof RateLimitError) return `GitHub ${err.message.toLowerCase()}. Try again later.`;
+  if (err instanceof HttpError) {
+    switch (err.status) {
+      case 0:
+        return err.message;
+      case 401:
+        return 'GitHub token is invalid or expired.';
+      case 403:
+        return `The token does not have write access to ${repo}.`;
+      case 404:
+        return `Repository ${repo} was not found, or the token cannot access it.`;
+      default:
+        return `GitHub error ${err.message}`;
+    }
+  }
+  return err instanceof Error ? err.message : String(err);
+}
 
 export interface FileChange {
   /** Path from the repository root, e.g. `0001_two-sum/two-sum_py_1.py`. */
@@ -37,6 +57,21 @@ export interface CommitFilesOptions {
   files: FileChange[];
   author?: GitIdentity;
   committer?: GitIdentity;
+}
+
+export interface RepositoryInfo {
+  fullName: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  canPush: boolean;
+}
+
+export interface AccessCheck {
+  repository: RepositoryInfo;
+  /** Branch commits will go to. */
+  branch: string;
+  /** True when the repository has no commits yet. */
+  empty: boolean;
 }
 
 /** Thrown when the repository has no commits yet. */
@@ -108,6 +143,47 @@ export class GitHubClient {
     });
   }
 
+  get fullName(): string {
+    return `${this.owner}/${this.repo}`;
+  }
+
+  /**
+   * Checks that the token can read the repository and write to it, and that
+   * `branch` (when given) exists. Throws with a user-facing message otherwise.
+   *
+   * Write access is proven by creating an empty blob. A blob that no commit
+   * points to never shows up in the repository and is cleaned up by GitHub.
+   */
+  async verifyAccess(branch: string): Promise<AccessCheck> {
+    let info: RepositoryInfo;
+    try {
+      info = await this.getRepository();
+    } catch (err) {
+      throw new Error(describeGitHubError(err, this.fullName));
+    }
+    if (!info.canPush) throw new Error(`Your account cannot push to ${info.fullName}.`);
+
+    const target = branch || info.defaultBranch;
+    let empty = false;
+    try {
+      if ((await this.getRef(target)) === null) {
+        throw new Error(`Branch "${target}" does not exist in ${info.fullName}.`);
+      }
+      await this.createBlob('');
+    } catch (err) {
+      if (err instanceof EmptyRepositoryError || (err instanceof HttpError && err.status === 409)) {
+        empty = true;
+      } else if (err instanceof HttpError && (err.status === 403 || err.status === 404)) {
+        throw new Error(`The token can read ${info.fullName} but cannot write to it. Give it Contents: Read and write.`);
+      } else if (err instanceof HttpError) {
+        throw new Error(describeGitHubError(err, info.fullName));
+      } else {
+        throw err;
+      }
+    }
+    return { repository: info, branch: target, empty };
+  }
+
   commitUrl(sha: string): string {
     return `https://github.com/${this.owner}/${this.repo}/commit/${sha}`;
   }
@@ -115,6 +191,22 @@ export class GitHubClient {
   async getDefaultBranch(): Promise<string> {
     const repo = await this.call<{ default_branch: string }>('');
     return repo.default_branch;
+  }
+
+  /** Repository details plus whether the token can push to it. */
+  async getRepository(): Promise<RepositoryInfo> {
+    const repo = await this.call<{
+      full_name: string;
+      default_branch: string;
+      private: boolean;
+      permissions?: { push?: boolean; admin?: boolean };
+    }>('');
+    return {
+      fullName: repo.full_name,
+      defaultBranch: repo.default_branch,
+      isPrivate: repo.private,
+      canPush: Boolean(repo.permissions?.push || repo.permissions?.admin),
+    };
   }
 
   /** Commit SHA the branch points at, or null when the branch does not exist. */
