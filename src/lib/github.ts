@@ -227,9 +227,17 @@ export class GitHubClient {
   }
 
   async readTree(treeSha: string, recursive = false): Promise<TreeEntry[]> {
+    return (await this.readTreeWithStatus(treeSha, recursive)).entries;
+  }
+
+  /**
+   * Reads a tree, reporting whether GitHub cut it short. Recursive reads stop
+   * at about 100,000 entries or 7 MB, after which `truncated` is true.
+   */
+  async readTreeWithStatus(treeSha: string, recursive: boolean): Promise<{ entries: TreeEntry[]; truncated: boolean }> {
     const suffix = recursive ? '?recursive=1' : '';
-    const tree = await this.call<{ tree: TreeEntry[] }>(`/git/trees/${treeSha}${suffix}`);
-    return tree.tree;
+    const tree = await this.call<{ tree: TreeEntry[]; truncated?: boolean }>(`/git/trees/${treeSha}${suffix}`);
+    return { entries: tree.tree, truncated: Boolean(tree.truncated) };
   }
 
   /** Entries directly inside `folder` (one level, no recursion). Empty when the folder does not exist. */

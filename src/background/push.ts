@@ -5,6 +5,7 @@ import { HttpError } from '../lib/http';
 import { problemUrl } from '../lib/leetcode';
 import type { ProblemInfo, PushRequest, PushResponse } from '../lib/messages';
 import { folderName, nextSequence, solutionFileName, statusLabel } from '../lib/naming';
+import { folderFiles, matchProblemFolder, scanRepository, type FolderFile } from '../lib/repo-scan';
 import { getSettings, isConnected } from '../lib/storage';
 
 const README = 'README.md';
@@ -24,15 +25,37 @@ function isNotFastForward(err: unknown): boolean {
   return err instanceof HttpError && err.status === 422;
 }
 
+/**
+ * Where a problem's files go: an existing folder for the problem (also one
+ * named by another tool, like `1-two-sum`) or the default `0001_two-sum`.
+ */
+async function locateProblemFolder(
+  client: GitHubClient,
+  rootTree: string | null,
+  problem: ProblemInfo,
+): Promise<{ folder: string; files: FolderFile[] }> {
+  const fallback = folderName(problem);
+  if (!rootTree) return { folder: fallback, files: [] };
+
+  const index = await scanRepository(client, rootTree);
+  const match = matchProblemFolder(index.folders, problem);
+  if (match) return { folder: match.path, files: await folderFiles(client, rootTree, match) };
+
+  // Folder names that do not start with a number (contest problems) are not
+  // in the index, so read the default folder directly before writing to it.
+  const entries = await client.listFolder(rootTree, fallback);
+  const files = entries.filter((e) => e.type === 'blob').map((e) => ({ name: e.path, sha: e.sha }));
+  return { folder: fallback, files };
+}
+
 async function buildFiles(
   client: GitHubClient,
   rootTree: string | null,
   req: PushRequest,
 ): Promise<{ files: FileChange[]; solutionPath: string }> {
   const { problem, submission, notes } = req;
-  const folder = folderName(problem);
-  const entries = rootTree ? await client.listFolder(rootTree, folder) : [];
-  const names = entries.filter((e) => e.type === 'blob').map((e) => e.path);
+  const { folder, files: existing } = await locateProblemFolder(client, rootTree, problem);
+  const names = existing.map((f) => f.name);
 
   const sequence = nextSequence(names, problem.titleSlug, submission.lang);
   const status = statusLabel(submission.statusCode, submission.statusMsg);
@@ -41,9 +64,9 @@ async function buildFiles(
   const files: FileChange[] = [{ path: solutionPath, content: submission.code }];
 
   if (notes) {
-    const readmeEntry = entries.find((e) => e.type === 'blob' && e.path === README);
-    const existing = readmeEntry ? await client.readBlob(readmeEntry.sha) : null;
-    files.push({ path: `${folder}/${README}`, content: readmeContent(existing, problem, fileName, notes) });
+    const readmeFile = existing.find((f) => f.name === README);
+    const readme = readmeFile ? await client.readBlob(readmeFile.sha) : null;
+    files.push({ path: `${folder}/${README}`, content: readmeContent(readme, problem, fileName, notes) });
   }
   return { files, solutionPath };
 }
