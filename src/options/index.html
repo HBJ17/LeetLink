@@ -81,6 +81,28 @@
         </section>
       </form>
       <p id="status" class="status" role="status"></p>
+
+      <dialog id="existing-repo" aria-labelledby="existing-repo-title">
+        <form method="dialog">
+          <h2 id="existing-repo-title">This repository already has solutions</h2>
+          <p>
+            Found <strong id="existing-repo-count"></strong> in
+            <strong id="existing-repo-name"></strong>, for example
+            <span id="existing-repo-examples"></span>. What should LeetLink do?
+          </p>
+
+          <button type="submit" class="choice" value="keep">
+            <span class="choice-title">Keep existing, add only what's missing <span class="badge">Recommended</span></span>
+            <span class="choice-text">Existing files are never touched. Importing past submissions adds only the ones not already here.</span>
+          </button>
+          <button type="submit" class="choice" value="connect">
+            <span class="choice-title">Just connect, no import</span>
+            <span class="choice-text">Only new submissions are pushed from now on.</span>
+          </button>
+
+          <p class="hint">LeetLink never deletes or overwrites files. New submissions for these problems go into their existing folders.</p>
+        </form>
+      </dialog>
     </main>
     <script type="module" src="./options.ts"></script>
   </body>

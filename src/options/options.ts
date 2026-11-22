@@ -4,7 +4,8 @@
 import { GitHubClient, parseRepoLink, repoWebUrl } from '../lib/github';
 import { ACCEPTED_STATUS } from '../lib/messages';
 import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage, TEMPLATE_PLACEHOLDERS, type MessageContext } from '../lib/naming';
-import { getSettings, updateSettings, type Settings } from '../lib/storage';
+import { scanRepository, type ProblemFolder } from '../lib/repo-scan';
+import { getSettings, updateSettings, type ExistingRepoChoice, type Settings } from '../lib/storage';
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -104,7 +105,78 @@ async function save(): Promise<void> {
   render(saved);
 
   const where = check.empty ? 'The repository is empty; the first push will create' : 'Pushing to';
-  setStatus(`Connected to ${check.repository.fullName}. ${where} branch "${check.branch}".`, 'ok');
+  const connected = `Connected to ${check.repository.fullName}. ${where} branch "${check.branch}".`;
+  setStatus(connected, 'ok');
+  if (check.empty) return;
+
+  // Look for problem folders already in the repository, from LeetLink or another tool.
+  setStatus(`${connected} Looking for existing solutions...`, 'ok');
+  let folders: ProblemFolder[];
+  try {
+    folders = await findProblemFolders(new GitHubClient(token, owner, repo), check.branch);
+  } catch {
+    setStatus(`${connected} Could not scan the repository for existing solutions.`, 'ok');
+    return;
+  }
+  if (!folders.length) {
+    setStatus(connected, 'ok');
+    return;
+  }
+
+  const choice = await askExistingRepoChoice(check.repository.fullName, folders, saved.existingRepoChoice);
+  if (choice) await updateSettings({ existingRepoChoice: choice });
+  const outcome =
+    (choice ?? saved.existingRepoChoice) === 'connect'
+      ? 'Only new submissions will be pushed.'
+      : 'Existing files stay as they are; an import adds only what is missing.';
+  setStatus(`${connected} ${countLabel(folders.length)} found. ${outcome}`, 'ok');
+}
+
+async function findProblemFolders(client: GitHubClient, branch: string): Promise<ProblemFolder[]> {
+  const head = await client.getRef(branch);
+  if (!head) return [];
+  return (await scanRepository(client, await client.getCommitTree(head))).folders;
+}
+
+function countLabel(count: number): string {
+  return count === 1 ? '1 problem folder' : `${count} problem folders`;
+}
+
+/**
+ * Asks what to do with a repository that already has problem folders.
+ * Resolves to the choice, or null when the dialog is dismissed.
+ */
+function askExistingRepoChoice(
+  repoName: string,
+  folders: readonly ProblemFolder[],
+  current: ExistingRepoChoice | '',
+): Promise<ExistingRepoChoice | null> {
+  const dialog = byId<HTMLDialogElement>('existing-repo');
+  byId<HTMLElement>('existing-repo-count').textContent = countLabel(folders.length);
+  byId<HTMLElement>('existing-repo-name').textContent = repoName;
+
+  const examples = byId<HTMLElement>('existing-repo-examples');
+  examples.replaceChildren();
+  folders.slice(0, 3).forEach((folder, i) => {
+    if (i > 0) examples.append(', ');
+    const code = document.createElement('code');
+    code.textContent = folder.path;
+    examples.append(code);
+  });
+
+  return new Promise((resolve) => {
+    dialog.returnValue = '';
+    dialog.addEventListener(
+      'close',
+      () => {
+        const value = dialog.returnValue;
+        resolve(value === 'keep' || value === 'connect' ? value : null);
+      },
+      { once: true },
+    );
+    dialog.showModal();
+    dialog.querySelector<HTMLButtonElement>(`button[value="${current || 'keep'}"]`)?.focus();
+  });
 }
 
 form.addEventListener('submit', (event) => {

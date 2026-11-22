@@ -16,7 +16,15 @@ export interface Settings {
   messageTemplate: string;
   /** Whether the commit dialog opens with the notes box shown. */
   notesByDefault: boolean;
+  /**
+   * What to do when the connected repository already has problem folders:
+   * `keep` adds only missing submissions on import, `connect` skips importing.
+   * Empty until the user chooses. Existing files are never changed either way.
+   */
+  existingRepoChoice: ExistingRepoChoice | '';
 }
+
+export type ExistingRepoChoice = 'keep' | 'connect';
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = {
   token: '',
@@ -27,6 +35,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   confirmBeforeCommit: true,
   messageTemplate: '',
   notesByDefault: false,
+  existingRepoChoice: '',
 };
 
 const SETTINGS_KEY = 'settings';
