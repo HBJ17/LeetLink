@@ -5,9 +5,14 @@ export interface CommitDraft {
   message: string;
   /** Notes for README.md, or null for no README. */
   notes: string | null;
+  /** True once the user has seen the "Already committed" warning and commits anyway. */
+  allowDuplicate: boolean;
 }
 
-export type CommitOutcome = { ok: true; commitUrl: string } | { ok: false; error: string };
+export type CommitOutcome =
+  | { ok: true; commitUrl: string }
+  /** `duplicatePath` is set when identical code is already committed there. */
+  | { ok: false; error: string; duplicatePath?: string };
 
 export interface CommitDialogOptions {
   /** Shown as the dialog heading, e.g. `0001. Two Sum`. */
@@ -17,6 +22,12 @@ export interface CommitDialogOptions {
   defaultMessage: string;
   /** Open with the notes box shown instead of "No README". */
   notesByDefault?: boolean;
+  /**
+   * Resolves to the path of a file with identical code, or null. While it is
+   * pending the dialog works normally; when it finds a copy, the dialog warns
+   * and moves the default to Skip.
+   */
+  duplicateCheck?: Promise<string | null>;
   /** Performs the push. The dialog shows progress and the result. */
   onCommit: (draft: CommitDraft) => Promise<CommitOutcome>;
 }
@@ -73,6 +84,12 @@ const STYLES = `
   }
   .actions button.primary { background: #ffd600; border-color: #ffd600; color: #161616; }
   .actions button:disabled { opacity: 0.5; cursor: default; }
+  .duplicate {
+    margin: 16px 0 0; padding: 10px 12px; border-radius: 8px;
+    background: rgba(255, 214, 0, 0.08); border: 1px solid rgba(255, 214, 0, 0.35);
+    color: #ffe680; font-size: 13px;
+  }
+  .duplicate code { font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: #ffd600; word-break: break-all; }
   [hidden] { display: none !important; }
 `;
 
@@ -95,6 +112,7 @@ const MARKUP = `
         <textarea id="ll-notes" placeholder="Approach, complexity, anything worth remembering..." hidden></textarea>
       </div>
 
+      <p class="duplicate" role="alert" hidden></p>
       <p class="status" role="status"></p>
 
       <div class="actions">
@@ -130,6 +148,7 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
   const skipButton = query<HTMLButtonElement>(shadow, '[data-action="skip"]');
   const commitButton = query<HTMLButtonElement>(shadow, '[data-action="commit"]');
   const backdrop = query<HTMLDivElement>(shadow, '.backdrop');
+  const duplicateBanner = query<HTMLParagraphElement>(shadow, '.duplicate');
 
   heading.textContent = options.heading;
   sub.textContent = options.subheading;
@@ -137,6 +156,22 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
 
   let writeNotes = false;
   let busy = false;
+  let duplicatePath: string | null = null;
+  /** Set once the user types or clicks, so a late warning does not steal focus. */
+  let touched = false;
+
+  /** Warns that identical code is already committed and makes Skip the default. */
+  function showDuplicate(path: string): void {
+    duplicatePath = path;
+    const code = document.createElement('code');
+    code.textContent = path;
+    duplicateBanner.replaceChildren('Already committed as ', code, '. Committing again adds an identical copy.');
+    duplicateBanner.hidden = false;
+    commitButton.textContent = 'Commit anyway';
+    commitButton.classList.remove('primary');
+    skipButton.classList.add('primary');
+    if (!touched && !busy) skipButton.focus();
+  }
 
   function setNotesMode(write: boolean, focus = true): void {
     writeNotes = write;
@@ -178,7 +213,7 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
       setStatus('Pushing to GitHub...');
 
       const outcome = await options
-        .onCommit({ message, notes })
+        .onCommit({ message, notes, allowDuplicate: duplicatePath !== null })
         .catch((err: unknown): CommitOutcome => ({ ok: false, error: String(err) }));
 
       busy = false;
@@ -195,6 +230,12 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
         skipButton.textContent = 'Close';
         commitButton.hidden = true;
         closeTimer = window.setTimeout(close, AUTO_CLOSE_MS);
+      } else if (outcome.duplicatePath) {
+        // The push found a copy the early check missed. Warn, and let the next click commit anyway.
+        commitButton.disabled = false;
+        setStatus('');
+        touched = false;
+        showDuplicate(outcome.duplicatePath);
       } else {
         commitButton.disabled = false;
         commitButton.textContent = 'Try again';
@@ -220,9 +261,21 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
       if (event.key === 'Enter' && event.composedPath()[0] === messageInput) void commit();
     });
 
+    for (const type of ['keydown', 'pointerdown'] as const) {
+      host.addEventListener(type, () => {
+        touched = true;
+      });
+    }
+
     document.documentElement.append(host);
     messageInput.focus();
     messageInput.select();
+
+    options.duplicateCheck
+      ?.then((path) => {
+        if (path && host.isConnected && duplicatePath === null) showDuplicate(path);
+      })
+      .catch(() => undefined);
   });
 }
 
@@ -282,6 +335,9 @@ export function showPushNotice(label: string, push: Promise<CommitOutcome>): voi
         link.rel = 'noopener noreferrer';
         link.textContent = 'View commit';
         box.append(link);
+        window.setTimeout(() => host.remove(), AUTO_CLOSE_MS);
+      } else if (outcome.duplicatePath) {
+        text.textContent = `Skipped: already committed as ${outcome.duplicatePath}.`;
         window.setTimeout(() => host.remove(), AUTO_CLOSE_MS);
       } else {
         text.className = 'error';

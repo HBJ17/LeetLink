@@ -3,7 +3,14 @@
 import { describeGitHubError, EmptyRepositoryError, GitHubClient, type FileChange } from '../lib/github';
 import { HttpError } from '../lib/http';
 import { problemUrl } from '../lib/leetcode';
-import type { ProblemInfo, PushRequest, PushResponse } from '../lib/messages';
+import { gitBlobSha } from '../lib/hash';
+import type {
+  DuplicateCheckRequest,
+  DuplicateCheckResponse,
+  ProblemInfo,
+  PushRequest,
+  PushResponse,
+} from '../lib/messages';
 import { folderName, nextSequence, solutionFileName, statusLabel } from '../lib/naming';
 import { folderFiles, matchProblemFolder, scanRepository, type FolderFile } from '../lib/repo-scan';
 import { getSettings, isConnected } from '../lib/storage';
@@ -19,6 +26,14 @@ function readmeContent(existing: string | null, problem: ProblemInfo, fileName: 
   const meta = [`[LeetCode](${problemUrl(problem.titleSlug)})`, problem.difficulty];
   if (problem.topicTags.length) meta.push(problem.topicTags.join(', '));
   return `# ${problem.frontendId}. ${problem.title}\n\n${meta.join(' · ')}\n\n${section}`;
+}
+
+/** The submitted code is already committed at `path`. */
+class DuplicateError extends Error {
+  override name = 'DuplicateError';
+  constructor(readonly path: string) {
+    super(`Already committed as ${path}`);
+  }
 }
 
 function isNotFastForward(err: unknown): boolean {
@@ -57,6 +72,12 @@ async function buildFiles(
   const { folder, files: existing } = await locateProblemFolder(client, rootTree, problem);
   const names = existing.map((f) => f.name);
 
+  if (!req.allowDuplicate) {
+    const sha = await gitBlobSha(submission.code);
+    const same = existing.find((f) => f.sha === sha);
+    if (same) throw new DuplicateError(`${folder}/${same.name}`);
+  }
+
   const sequence = nextSequence(names, problem.titleSlug, submission.lang);
   const status = statusLabel(submission.statusCode, submission.statusMsg);
   const fileName = solutionFileName(problem.titleSlug, submission.lang, sequence, status);
@@ -84,15 +105,57 @@ async function pushToEmptyRepository(client: GitHubClient, branch: string, req: 
   return { ok: true, commitUrl: client.commitUrl(sha), path: solutionPath };
 }
 
-export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
-  const settings = await getSettings();
-  if (!isConnected(settings)) {
-    return { ok: false, error: 'No repository connected. Add your repository and token in LeetLink settings.' };
+class NotConnectedError extends Error {
+  override name = 'NotConnectedError';
+  constructor() {
+    super('No repository connected. Add your repository and token in LeetLink settings.');
   }
+}
 
+async function connect(): Promise<{ client: GitHubClient; branch: string }> {
+  const settings = await getSettings();
+  if (!isConnected(settings)) throw new NotConnectedError();
   const client = new GitHubClient(settings.token, settings.owner, settings.repo);
+  const branch = settings.branch || (await client.getDefaultBranch());
+  return { client, branch };
+}
+
+function failureMessage(err: unknown, client: GitHubClient | null): string {
+  if (err instanceof NotConnectedError || !client) return err instanceof Error ? err.message : String(err);
+  return describeGitHubError(err, client.fullName);
+}
+
+/** Path of a file in the problem's folder with exactly this code, or null. */
+export async function findCommittedCopy(req: DuplicateCheckRequest): Promise<DuplicateCheckResponse> {
+  let client: GitHubClient | null = null;
   try {
-    const branch = settings.branch || (await client.getDefaultBranch());
+    const repo = await connect();
+    client = repo.client;
+    let head: string | null;
+    try {
+      head = await client.getRef(repo.branch);
+    } catch (err) {
+      if (err instanceof EmptyRepositoryError) return { ok: true, duplicatePath: null };
+      throw err;
+    }
+    if (!head) return { ok: true, duplicatePath: null };
+
+    const rootTree = await client.getCommitTree(head);
+    const { folder, files } = await locateProblemFolder(client, rootTree, req.problem);
+    const sha = await gitBlobSha(req.code);
+    const same = files.find((f) => f.sha === sha);
+    return { ok: true, duplicatePath: same ? `${folder}/${same.name}` : null };
+  } catch (err) {
+    return { ok: false, error: failureMessage(err, client) };
+  }
+}
+
+export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
+  let client: GitHubClient | null = null;
+  try {
+    const repo = await connect();
+    client = repo.client;
+    const { branch } = repo;
 
     for (let attempt = 1; ; attempt++) {
       let head: string | null;
@@ -102,7 +165,7 @@ export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
         if (err instanceof EmptyRepositoryError) return await pushToEmptyRepository(client, branch, req);
         throw err;
       }
-      if (!head) return { ok: false, error: `Branch "${branch}" does not exist in ${client.owner}/${client.repo}.` };
+      if (!head) return { ok: false, error: `Branch "${branch}" does not exist in ${client.fullName}.` };
 
       try {
         const rootTree = await client.getCommitTree(head);
@@ -116,6 +179,9 @@ export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
       }
     }
   } catch (err) {
-    return { ok: false, error: describeGitHubError(err, client.fullName) };
+    if (err instanceof DuplicateError) {
+      return { ok: false, error: `Already committed as ${err.path}.`, duplicatePath: err.path };
+    }
+    return { ok: false, error: failureMessage(err, client) };
   }
 }

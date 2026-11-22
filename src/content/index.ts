@@ -6,19 +6,27 @@ import {
   ACCEPTED_STATUS,
   isHookMessage,
   type BackgroundRequest,
+  type DuplicateCheckResponse,
   type ProblemInfo,
   type PushResponse,
   type SubmissionResult,
 } from '../lib/messages';
 import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage } from '../lib/naming';
 import { getSettings } from '../lib/storage';
-import { openCommitDialog, showPushNotice, type CommitOutcome } from './dialog';
+import { openCommitDialog, showPushNotice, type CommitDraft, type CommitOutcome } from './dialog';
 
-async function push(problem: ProblemInfo, submission: SubmissionResult, message: string, notes: string | null): Promise<CommitOutcome> {
-  const request: BackgroundRequest = { type: 'push', payload: { problem, submission, message, notes } };
+async function push(problem: ProblemInfo, submission: SubmissionResult, draft: CommitDraft): Promise<CommitOutcome> {
+  const request: BackgroundRequest = { type: 'push', payload: { problem, submission, ...draft } };
   const response = (await chrome.runtime.sendMessage(request)) as PushResponse | undefined;
   if (!response) return { ok: false, error: 'LeetLink did not respond. Reload the page and try again.' };
   return response.ok ? { ok: true, commitUrl: response.commitUrl } : response;
+}
+
+/** Path of an identical file already in the repository, or null (also when the check fails). */
+async function findCommittedCopy(problem: ProblemInfo, code: string): Promise<string | null> {
+  const request: BackgroundRequest = { type: 'checkDuplicate', payload: { problem, code } };
+  const response = (await chrome.runtime.sendMessage(request)) as DuplicateCheckResponse | undefined;
+  return response?.ok ? response.duplicatePath : null;
 }
 
 async function handleSubmission(submission: SubmissionResult): Promise<void> {
@@ -30,7 +38,8 @@ async function handleSubmission(submission: SubmissionResult): Promise<void> {
   const message = renderCommitMessage(settings.messageTemplate || DEFAULT_MESSAGE_TEMPLATE, { problem, submission });
 
   if (!settings.confirmBeforeCommit) {
-    showPushNotice(message, push(problem, submission, message, null));
+    // Identical code is skipped rather than committed again.
+    showPushNotice(message, push(problem, submission, { message, notes: null, allowDuplicate: false }));
     return;
   }
 
@@ -40,7 +49,8 @@ async function handleSubmission(submission: SubmissionResult): Promise<void> {
     subheading: details.join(' · '),
     defaultMessage: message,
     notesByDefault: settings.notesByDefault,
-    onCommit: ({ message, notes }) => push(problem, submission, message, notes),
+    duplicateCheck: findCommittedCopy(problem, submission.code).catch(() => null),
+    onCommit: (draft) => push(problem, submission, draft),
   });
 }
 

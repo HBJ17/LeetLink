@@ -50,10 +50,22 @@ export interface PushRequest {
   message: string;
   /** Notes for README.md, or null to commit only the solution file. */
   notes: string | null;
+  /** Commit even when identical code is already in the problem folder. */
+  allowDuplicate: boolean;
 }
 
 export type PushResponse =
   | { ok: true; commitUrl: string; path: string }
-  | { ok: false; error: string };
+  /** `duplicatePath` is set when the push was refused because the code is already committed there. */
+  | { ok: false; error: string; duplicatePath?: string };
 
-export type BackgroundRequest = { type: 'push'; payload: PushRequest };
+export interface DuplicateCheckRequest {
+  problem: ProblemInfo;
+  code: string;
+}
+
+export type DuplicateCheckResponse = { ok: true; duplicatePath: string | null } | { ok: false; error: string };
+
+export type BackgroundRequest =
+  | { type: 'push'; payload: PushRequest }
+  | { type: 'checkDuplicate'; payload: DuplicateCheckRequest };
