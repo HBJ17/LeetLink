@@ -1,7 +1,13 @@
 // Pushes one submission (and optional notes) to the connected repository.
 
-import { describeGitHubError, EmptyRepositoryError, GitHubClient, type FileChange } from '../lib/github';
-import { HttpError, isTransientError, retryAfter } from '../lib/http';
+import {
+  describeGitHubError,
+  EmptyRepositoryError,
+  GitHubClient,
+  isNotFastForward,
+  type FileChange,
+} from '../lib/github';
+import { isTransientError, retryAfter } from '../lib/http';
 import { problemUrl } from '../lib/leetcode';
 import { gitBlobSha } from '../lib/hash';
 import type {
@@ -35,10 +41,6 @@ class DuplicateError extends Error {
   constructor(readonly path: string) {
     super(`Already committed as ${path}`);
   }
-}
-
-function isNotFastForward(err: unknown): boolean {
-  return err instanceof HttpError && err.status === 422;
 }
 
 /**
@@ -140,9 +142,9 @@ async function connect(): Promise<{ client: GitHubClient; branch: string }> {
   return { client, branch };
 }
 
-function failureMessage(err: unknown, client: GitHubClient | null): string {
+function failureMessage(err: unknown, client: GitHubClient | null, branch = ''): string {
   if (err instanceof NotConnectedError || !client) return err instanceof Error ? err.message : String(err);
-  return describeGitHubError(err, client.fullName);
+  return describeGitHubError(err, client.fullName, branch);
 }
 
 /**
@@ -172,10 +174,11 @@ export async function previewPush(req: PushPreviewRequest): Promise<PushPreviewR
 
 export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
   let client: GitHubClient | null = null;
+  let branch = '';
   try {
     const repo = await connect();
     client = repo.client;
-    const { branch } = repo;
+    branch = repo.branch;
 
     for (let attempt = 1; ; attempt++) {
       let head: string | null;
@@ -194,6 +197,7 @@ export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
         return { ok: true, commitUrl: result.htmlUrl, path: solutionPath };
       } catch (err) {
         // Someone else moved the branch while this commit was built. Rebuild on the new head.
+        // A protected branch fails with the same status code but is never retried.
         if (isNotFastForward(err) && attempt < MAX_ATTEMPTS) continue;
         throw err;
       }
@@ -202,7 +206,7 @@ export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
     if (err instanceof DuplicateError) {
       return { ok: false, error: `Already committed as ${err.path}.`, duplicatePath: err.path };
     }
-    const failure: PushResponse = { ok: false, error: failureMessage(err, client) };
+    const failure: PushResponse = { ok: false, error: failureMessage(err, client, branch) };
     if (isTransientError(err)) failure.retryable = true;
     const after = retryAfter(err);
     if (after) failure.notBefore = after.getTime();

@@ -6,24 +6,57 @@ import { HttpError, RateLimitError, request, type RequestOptions } from './http'
 
 const API = 'https://api.github.com';
 
-/** Turns a GitHub API failure into a message the user can act on. */
-export function describeGitHubError(err: unknown, repo: string): string {
-  if (err instanceof RateLimitError) return `GitHub ${err.message.toLowerCase()}. Try again later.`;
-  if (err instanceof HttpError) {
-    switch (err.status) {
-      case 0:
-        return err.message;
-      case 401:
-        return 'GitHub token is invalid or expired.';
-      case 403:
-        return `The token does not have write access to ${repo}.`;
-      case 404:
-        return `Repository ${repo} was not found, or the token cannot access it.`;
-      default:
-        return `GitHub error ${err.message}`;
-    }
+/** The `message` GitHub sent with an error response, or an empty string. */
+function githubMessage(err: HttpError): string {
+  const body = err.body;
+  if (typeof body === 'object' && body !== null && 'message' in body) {
+    return String((body as { message: unknown }).message);
   }
-  return err instanceof Error ? err.message : String(err);
+  return typeof body === 'string' ? body : '';
+}
+
+/** A ref update was refused because the branch moved on (someone else pushed first). */
+export function isNotFastForward(err: unknown): boolean {
+  return err instanceof HttpError && err.status === 422 && /fast[ -]?forward/i.test(githubMessage(err));
+}
+
+/** A write was refused by branch protection or a repository ruleset. */
+export function isProtectedBranchError(err: unknown): boolean {
+  if (!(err instanceof HttpError) || ![403, 409, 422].includes(err.status)) return false;
+  return /protected branch|rule violation|ruleset|required status check|changes must be made through a pull request/i.test(
+    githubMessage(err),
+  );
+}
+
+/** Turns a GitHub API failure into a message the user can act on. */
+export function describeGitHubError(err: unknown, repo: string, branch = ''): string {
+  if (err instanceof RateLimitError) return `GitHub ${err.message.toLowerCase()}. Try again later.`;
+  if (!(err instanceof HttpError)) return err instanceof Error ? err.message : String(err);
+
+  const message = githubMessage(err);
+  const branchName = branch ? `"${branch}"` : 'The branch';
+  if (isProtectedBranchError(err)) {
+    return `${branchName} in ${repo} is protected, so LeetLink cannot push to it. Turn off the protection rule or choose another branch in LeetLink settings.`;
+  }
+  if (/archived/i.test(message)) return `${repo} is archived and read-only. Unarchive it or connect another repository.`;
+  if (/not accessible by (personal access|fine-grained|integration)/i.test(message)) {
+    return `The token cannot write to ${repo}. Give it Contents: Read and write permission for this repository.`;
+  }
+
+  switch (err.status) {
+    case 0:
+      return err.message;
+    case 401:
+      return 'GitHub token is invalid or expired. Create a new token and save it in LeetLink settings.';
+    case 403:
+      return `The token does not have write access to ${repo}.`;
+    case 404:
+      return `Repository ${repo} was not found. It may have been renamed or deleted, or the token cannot access it.`;
+    case 409:
+      return `GitHub reported a conflict in ${repo}${message ? `: ${message}` : ''}. Try again.`;
+    default:
+      return err.status >= 500 ? 'GitHub is having problems right now. Try again later.' : `GitHub error ${err.message}`;
+  }
 }
 
 export interface FileChange {

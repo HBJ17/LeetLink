@@ -140,10 +140,36 @@ describe('pushSubmission', () => {
 
     getRef.mockRejectedValueOnce(new HttpError(401, '401: Bad credentials'));
     const denied = await pushSubmission(request());
-    expect(denied).toMatchObject({ ok: false, error: 'GitHub token is invalid or expired.' });
+    expect(denied).toMatchObject({ ok: false, error: expect.stringContaining('GitHub token is invalid or expired.') });
     expect(denied).not.toHaveProperty('retryable');
 
     getRef.mockRestore();
+  });
+
+  it('rebuilds on the new head when someone else pushed first', async () => {
+    const { HttpError } = await import('../src/lib/http');
+    const commitOnto = vi.spyOn(FakeClient.prototype, 'commitOnto');
+    commitOnto.mockRejectedValueOnce(new HttpError(422, '422: Update is not a fast forward', { message: 'Update is not a fast forward' }));
+
+    expect(await pushSubmission(request())).toMatchObject({ ok: true });
+    expect(commitOnto).toHaveBeenCalledTimes(2);
+    commitOnto.mockRestore();
+  });
+
+  it('stops at a protected branch with a clear message and no retry', async () => {
+    const { HttpError } = await import('../src/lib/http');
+    const commitOnto = vi.spyOn(FakeClient.prototype, 'commitOnto');
+    commitOnto.mockRejectedValue(
+      new HttpError(422, '422: Protected branch update failed for refs/heads/main.', {
+        message: 'Protected branch update failed for refs/heads/main.',
+      }),
+    );
+
+    const result = await pushSubmission(request());
+    expect(commitOnto).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('"main" in me/solutions is protected') });
+    expect(result).not.toHaveProperty('retryable');
+    commitOnto.mockRestore();
   });
 
   it('appends notes to an existing README', async () => {

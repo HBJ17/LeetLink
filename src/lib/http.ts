@@ -42,9 +42,16 @@ function rateLimitReset(response: Response): Date | null {
   return null;
 }
 
-function isRateLimited(response: Response): boolean {
+/**
+ * Primary limits report no remaining requests; secondary (abuse) limits come
+ * back as 403 with a Retry-After header or a message saying so.
+ */
+function isRateLimited(response: Response, body: unknown): boolean {
   if (response.status === 429) return true;
-  return response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0';
+  if (response.status !== 403) return false;
+  if (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after')) return true;
+  const message = typeof body === 'object' && body !== null && 'message' in body ? String(body.message) : '';
+  return /rate limit/i.test(message);
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -85,14 +92,13 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
       throw new HttpError(0, 'Network error. Check your connection.', String(err));
     }
 
-    if (isRateLimited(response)) throw new RateLimitError(rateLimitReset(response));
-
     if (response.status >= 500 && attempt < retries) {
       await delay(RETRY_BASE_MS * 2 ** attempt);
       continue;
     }
 
     const body = await readBody(response);
+    if (isRateLimited(response, body)) throw new RateLimitError(rateLimitReset(response));
     if (!response.ok) throw new HttpError(response.status, errorMessage(response.status, body), body);
     return body as T;
   }
