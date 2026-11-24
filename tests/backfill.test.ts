@@ -18,7 +18,7 @@ vi.stubGlobal('chrome', {
   tabs: { query, create, sendMessage },
 });
 
-const { countSolved, startImport } = await import('../src/background/backfill');
+const { cancelImport, countSolved, pauseImport, resumeImport, startImport } = await import('../src/background/backfill');
 
 function state(): ImportState {
   return store['importState'] as ImportState;
@@ -72,5 +72,34 @@ describe('startImport', () => {
     expect(await startImport()).toEqual({ ok: true });
     expect(sendMessage).not.toHaveBeenCalled();
     expect(state()).toMatchObject({ total: 3 });
+  });
+});
+
+describe('pause, resume and cancel', () => {
+  it('pauses a running import', async () => {
+    store['importState'] = { status: 'importing', next: 2, total: 5 };
+    await pauseImport();
+    expect(state()).toMatchObject({ status: 'paused', next: 2 });
+  });
+
+  it('leaves a finished import alone when asked to pause', async () => {
+    store['importState'] = { status: 'done' };
+    await pauseImport();
+    expect(state().status).toBe('done');
+  });
+
+  it('resumes collecting on the LeetCode tab when it was paused while reading', async () => {
+    store['importState'] = { status: 'paused', collect: { offset: 40, lastKey: 'k', scanned: 40, done: false }, total: 12 };
+    expect(await resumeImport()).toEqual({ ok: true });
+    expect(state()).toMatchObject({ status: 'collecting', total: 12 });
+    expect(sendMessage).toHaveBeenCalledWith(7, { type: 'leetcodeCollect' });
+  });
+
+  it('cancels and frees the stored submissions', async () => {
+    store['importState'] = { status: 'paused', pushed: 3 };
+    store['importItems'] = [{ submissionId: '1' }];
+    await cancelImport();
+    expect(state()).toMatchObject({ status: 'cancelled', pushed: 3 });
+    expect(store['importItems']).toEqual([]);
   });
 });

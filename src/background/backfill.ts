@@ -52,6 +52,41 @@ export async function startImport(): Promise<SimpleResponse> {
   return { ok: true };
 }
 
+/** Pauses a running import; collecting or committing stops after the current step. */
+export async function pauseImport(): Promise<SimpleResponse> {
+  const state = await getImportState();
+  if (state.status === 'collecting' || state.status === 'importing') await updateImportState({ status: 'paused' });
+  return { ok: true };
+}
+
+/** Continues a paused import where it stopped. */
+export async function resumeImport(): Promise<SimpleResponse> {
+  const state = await getImportState();
+  if (state.status !== 'paused') return { ok: true };
+  if (!state.collect.done) {
+    await updateImportState({ status: 'collecting', error: null });
+    try {
+      const reply = await askLeetCodeTab<SimpleResponse>({ type: 'leetcodeCollect' }, true);
+      if (!reply.ok) await updateImportState({ status: 'error', error: reply.error });
+    } catch (err) {
+      await updateImportState({ status: 'error', error: errorText(err) });
+    }
+    return { ok: true };
+  }
+  await updateImportState({ status: 'importing', error: null });
+  void runImport();
+  return { ok: true };
+}
+
+/** Stops the import for good. Commits already made stay in the repository. */
+export async function cancelImport(): Promise<SimpleResponse> {
+  const state = await getImportState();
+  if (state.status === 'idle' || state.status === 'done') return { ok: true };
+  await updateImportState({ status: 'cancelled' });
+  await setImportItems([]);
+  return { ok: true };
+}
+
 // --- Committing collected submissions ------------------------------------------
 
 /** Pause between commits, to stay well inside GitHub's limits on creating content. */

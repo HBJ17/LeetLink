@@ -92,7 +92,11 @@ export type BackgroundRequest =
   /** From the popup or settings page: start importing past submissions. */
   | { type: 'importStart' }
   /** From a LeetCode tab: collecting finished, so committing can start. */
-  | { type: 'importCollected' };
+  | { type: 'importCollected' }
+  /** From the popup or settings page: pause, resume or cancel the running import. */
+  | { type: 'importPause' }
+  | { type: 'importResume' }
+  | { type: 'importCancel' };
 
 export type ImportCountResponse = { ok: true; username: string; solved: number } | { ok: false; error: string };
 

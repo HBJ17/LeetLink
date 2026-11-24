@@ -43,3 +43,41 @@
   opacity: 0.5;
   cursor: default;
 }
+
+.ll-import-bar {
+  position: relative;
+  height: 6px;
+  margin: 0 0 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #2a2a2a;
+}
+
+.ll-import-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #80ff9f;
+  transition: width 0.3s ease;
+}
+
+.ll-import-bar.indeterminate .ll-import-fill {
+  width: 30%;
+  animation: ll-import-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes ll-import-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ll-import-bar.indeterminate .ll-import-fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.4;
+  }
+}

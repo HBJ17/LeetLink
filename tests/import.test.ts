@@ -215,3 +215,19 @@ describe('runImport', () => {
     expect(state().next).toBe(0);
   });
 });
+
+describe('resumeImport', () => {
+  it('continues committing from where a paused import stopped', async () => {
+    const { resumeImport } = await import('../src/background/backfill');
+    startWith(
+      [item('1', twoSum, 'a()', '2024-01-01T00:00:00Z'), item('2', twoSum, 'b()', '2024-01-02T00:00:00Z')],
+      { status: 'paused', next: 1, pushed: 1, collect: { offset: 2, lastKey: null, scanned: 2, done: true } },
+    );
+    files['0001_two-sum/two-sum_py_1.py'] = 'a()';
+
+    await resumeImport();
+    await vi.waitFor(() => expect(state().status).toBe('done'), { timeout: 10_000 });
+    expect(commits.map((c) => Object.values(c.files)[0])).toEqual(['b()']);
+    expect(state()).toMatchObject({ next: 2, pushed: 2 });
+  });
+});

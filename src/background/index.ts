@@ -11,16 +11,25 @@ import type {
   SimpleResponse,
 } from '../lib/messages';
 import type { QueuedPush } from '../lib/storage';
-import { countSolved, runImport, startImport } from './backfill';
+import { cancelImport, countSolved, pauseImport, resumeImport, runImport, startImport } from './backfill';
 import { previewPush } from './push';
 import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
+
+const REQUEST_TYPES: ReadonlySet<string> = new Set<BackgroundRequest['type']>([
+  'push',
+  'previewPush',
+  'importCount',
+  'importStart',
+  'importCollected',
+  'importPause',
+  'importResume',
+  'importCancel',
+]);
 
 function isBackgroundRequest(value: unknown): value is BackgroundRequest {
   if (typeof value !== 'object' || value === null) return false;
   const type = (value as { type?: unknown }).type;
-  return (
-    type === 'push' || type === 'previewPush' || type === 'importCount' || type === 'importStart' || type === 'importCollected'
-  );
+  return typeof type === 'string' && REQUEST_TYPES.has(type);
 }
 
 type BackgroundResponse = PushResponse | PushPreviewResponse | ImportCountResponse | SimpleResponse;
@@ -38,6 +47,12 @@ function handle(request: BackgroundRequest): Promise<BackgroundResponse> {
     case 'importCollected':
       void runImport();
       return Promise.resolve({ ok: true });
+    case 'importPause':
+      return pauseImport();
+    case 'importResume':
+      return resumeImport();
+    case 'importCancel':
+      return cancelImport();
   }
 }
 
