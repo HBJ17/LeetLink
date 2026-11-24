@@ -2,7 +2,8 @@
 // retries queued pushes. It can be stopped whenever it is idle, so it keeps
 // no state in memory.
 
-import type { BackgroundRequest, DuplicateCheckResponse, PushResponse } from '../lib/messages';
+import type { BackgroundRequest, DuplicateCheckResponse, PushResponse, QueuedPushResult } from '../lib/messages';
+import type { QueuedPush } from '../lib/storage';
 import { findCommittedCopy } from './push';
 import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
 
@@ -21,8 +22,19 @@ function handle(request: BackgroundRequest): Promise<PushResponse | DuplicateChe
   }
 }
 
+/** Tells open LeetCode tabs how a queued push ended, so they can show it. */
+async function announce(item: QueuedPush, response: PushResponse): Promise<void> {
+  const message: QueuedPushResult = { type: 'queuedPushResult', label: item.request.message, response };
+  const tabs = await chrome.tabs.query({ url: 'https://leetcode.com/*' });
+  await Promise.all(
+    tabs.map((tab) => (tab.id === undefined ? undefined : chrome.tabs.sendMessage(tab.id, message).catch(() => undefined))),
+  );
+}
+
 function retryQueued(): void {
-  processQueue().catch((err: unknown) => console.error('[LeetLink] Retry failed:', err));
+  processQueue((item, response) => void announce(item, response).catch(() => undefined)).catch((err: unknown) =>
+    console.error('[LeetLink] Retry failed:', err),
+  );
 }
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {

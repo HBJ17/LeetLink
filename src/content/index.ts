@@ -5,6 +5,7 @@ import { fetchProblem } from '../lib/leetcode';
 import {
   ACCEPTED_STATUS,
   isHookMessage,
+  isQueuedPushResult,
   type BackgroundRequest,
   type DuplicateCheckResponse,
   type ProblemInfo,
@@ -13,7 +14,8 @@ import {
 } from '../lib/messages';
 import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage } from '../lib/naming';
 import { getSettings } from '../lib/storage';
-import { openCommitDialog, showPushNotice, type CommitDraft, type CommitOutcome } from './dialog';
+import { openCommitDialog, type CommitDraft, type CommitOutcome } from './dialog';
+import { outcomeToast, showToast, trackPush } from './toast';
 
 async function push(problem: ProblemInfo, submission: SubmissionResult, draft: CommitDraft): Promise<CommitOutcome> {
   const request: BackgroundRequest = { type: 'push', payload: { problem, submission, ...draft } };
@@ -39,7 +41,7 @@ async function handleSubmission(submission: SubmissionResult): Promise<void> {
 
   if (!settings.confirmBeforeCommit) {
     // Identical code is skipped rather than committed again.
-    showPushNotice(message, push(problem, submission, { message, notes: null, allowDuplicate: false }));
+    trackPush(message, push(problem, submission, { message, notes: null, allowDuplicate: false }));
     return;
   }
 
@@ -60,4 +62,12 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
   handleSubmission(event.data.payload).catch((err: unknown) => {
     console.error('[LeetLink] Could not handle submission:', err);
   });
+});
+
+// A push queued earlier finished in the background.
+chrome.runtime.onMessage.addListener((message: unknown, sender) => {
+  if (sender.id !== chrome.runtime.id || !isQueuedPushResult(message)) return false;
+  const { response } = message;
+  showToast(outcomeToast(message.label, response.ok ? { ok: true, commitUrl: response.commitUrl } : response));
+  return false;
 });

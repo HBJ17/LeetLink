@@ -79,3 +79,17 @@ export type DuplicateCheckResponse = { ok: true; duplicatePath: string | null } 
 export type BackgroundRequest =
   | { type: 'push'; payload: PushRequest }
   | { type: 'checkDuplicate'; payload: DuplicateCheckRequest };
+
+/** Sent from the background worker to LeetCode tabs when a queued push finishes. */
+export interface QueuedPushResult {
+  type: 'queuedPushResult';
+  /** The commit message, naming what was pushed. */
+  label: string;
+  response: PushResponse;
+}
+
+export function isQueuedPushResult(value: unknown): value is QueuedPushResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const msg = value as Partial<QueuedPushResult>;
+  return msg.type === 'queuedPushResult' && typeof msg.label === 'string' && typeof msg.response === 'object';
+}
