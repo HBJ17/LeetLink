@@ -81,3 +81,9 @@
     opacity: 0.4;
   }
 }
+
+.ll-import-hint {
+  margin: 0 0 10px;
+  color: #ffe680;
+  font-size: 12px;
+}

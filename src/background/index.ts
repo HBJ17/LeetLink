@@ -11,7 +11,17 @@ import type {
   SimpleResponse,
 } from '../lib/messages';
 import type { QueuedPush } from '../lib/storage';
-import { cancelImport, countSolved, pauseImport, resumeImport, runImport, startImport } from './backfill';
+import {
+  cancelImport,
+  countSolved,
+  ensureImportAlarm,
+  IMPORT_ALARM,
+  pauseImport,
+  resumeIfInterrupted,
+  resumeImport,
+  runImport,
+  startImport,
+} from './backfill';
 import { previewPush } from './push';
 import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
 
@@ -65,6 +75,10 @@ async function announce(item: QueuedPush, response: PushResponse): Promise<void>
   );
 }
 
+function resumeImports(): void {
+  resumeIfInterrupted().catch((err: unknown) => console.error('[LeetLink] Import resume failed:', err));
+}
+
 function retryQueued(): void {
   processQueue((item, response) => void announce(item, response).catch(() => undefined)).catch((err: unknown) =>
     console.error('[LeetLink] Retry failed:', err),
@@ -74,12 +88,17 @@ function retryQueued(): void {
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === chrome.runtime.OnInstalledReason.INSTALL) void chrome.runtime.openOptionsPage();
   retryQueued();
+  resumeImports();
 });
 
-chrome.runtime.onStartup.addListener(retryQueued);
+chrome.runtime.onStartup.addListener(() => {
+  retryQueued();
+  resumeImports();
+});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === RETRY_ALARM) retryQueued();
+  if (alarm.name === IMPORT_ALARM) resumeImports();
 });
 
 chrome.runtime.onMessage.addListener(
@@ -87,7 +106,11 @@ chrome.runtime.onMessage.addListener(
     if (sender.id !== chrome.runtime.id || !isBackgroundRequest(message)) return false;
 
     handle(message)
-      .then(sendResponse)
+      .then((response) => {
+        // Starting, pausing or finishing collection changes whether the import alarm is needed.
+        if (message.type.startsWith('import')) void ensureImportAlarm();
+        sendResponse(response);
+      })
       .catch((err: unknown) => sendResponse({ ok: false, error: String(err) }));
     return true; // Keep the channel open for the async response.
   },

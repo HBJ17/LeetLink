@@ -15,6 +15,7 @@ vi.stubGlobal('chrome', {
       set: async (items: Record<string, unknown>) => Object.assign(store, items),
     },
   },
+  alarms: { create: vi.fn(async () => undefined), clear: vi.fn(async () => true) },
   tabs: { query, create, sendMessage },
 });
 
@@ -101,5 +102,30 @@ describe('pause, resume and cancel', () => {
     await cancelImport();
     expect(state()).toMatchObject({ status: 'cancelled', pushed: 3 });
     expect(store['importItems']).toEqual([]);
+  });
+});
+
+describe('resumeIfInterrupted while collecting', () => {
+  it('asks the open LeetCode tab to continue when collecting has stalled', async () => {
+    const { resumeIfInterrupted } = await import('../src/background/backfill');
+    store['importState'] = { status: 'collecting', updatedAt: Date.now() - 5 * 60_000, collect: { done: false } };
+    await resumeIfInterrupted();
+    expect(sendMessage).toHaveBeenCalledWith(7, { type: 'leetcodeCollect' });
+  });
+
+  it('leaves collecting alone while it is still making progress', async () => {
+    const { resumeIfInterrupted } = await import('../src/background/backfill');
+    store['importState'] = { status: 'collecting', updatedAt: Date.now() - 10_000, collect: { done: false } };
+    await resumeIfInterrupted();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('waits for a LeetCode tab instead of opening one unasked', async () => {
+    const { resumeIfInterrupted } = await import('../src/background/backfill');
+    query.mockResolvedValueOnce([]);
+    store['importState'] = { status: 'collecting', updatedAt: Date.now() - 5 * 60_000, collect: { done: false } };
+    await resumeIfInterrupted();
+    expect(create).not.toHaveBeenCalled();
+    expect(state()).toMatchObject({ status: 'collecting', error: 'Open leetcode.com in a tab to continue.' });
   });
 });

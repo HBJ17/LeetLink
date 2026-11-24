@@ -4,6 +4,7 @@
 
 import { describeGitHubError, EmptyRepositoryError, GitHubClient, isNotFastForward } from '../lib/github';
 import { gitBlobSha } from '../lib/hash';
+import { isTransientError, retryAfter } from '../lib/http';
 import { ACCEPTED_STATUS, type ImportCountResponse, type ProblemInfo, type SimpleResponse } from '../lib/messages';
 import { folderName } from '../lib/naming';
 import { folderFiles, matchProblemFolder, scanRepository, type FolderFile, type ProblemFolder } from '../lib/repo-scan';
@@ -93,6 +94,8 @@ export async function cancelImport(): Promise<SimpleResponse> {
 const PACE_MS = 4000;
 /** Times one item is rebuilt when the branch moves underneath the import. */
 const MAX_REBUILDS = 3;
+/** Wait after a temporary failure before trying again. */
+const RETRY_WAIT_MS = 2 * 60_000;
 
 /** What the import knows about the repository between commits. */
 interface RepoCursor {
@@ -204,7 +207,8 @@ export async function runImport(options: RunImportOptions = {}): Promise<void> {
   let branch = '';
   try {
     let state = await getImportState();
-    if (state.status !== 'importing') return;
+    if (state.status !== 'importing' || state.waitUntil > Date.now()) return;
+    if (state.error) await updateImportState({ error: null });
     const settings = await getSettings();
     if (!isConnected(settings)) throw new Error('No repository connected.');
 
@@ -241,11 +245,54 @@ export async function runImport(options: RunImportOptions = {}): Promise<void> {
       await updateImportState({ next: index, pushed, skipped });
       if (result === 'pushed' && index < items.length) await sleep(paceMs);
     }
-    await updateImportState({ status: 'done' });
+    await updateImportState({ status: 'done', error: null });
   } catch (err) {
     const message = client ? describeGitHubError(err, client.fullName, branch) : errorText(err);
-    await updateImportState({ status: 'error', error: `Import stopped: ${message}` });
+    if (isTransientError(err)) {
+      // Offline, rate limited or a GitHub outage: wait, then the import alarm picks it up again.
+      const waitUntil = Math.max(Date.now() + RETRY_WAIT_MS, retryAfter(err)?.getTime() ?? 0);
+      await updateImportState({ waitUntil, error: `${message} Continuing at ${new Date(waitUntil).toLocaleTimeString()}.` });
+    } else {
+      await updateImportState({ status: 'error', error: `Import stopped: ${message}` });
+    }
   } finally {
     running = false;
   }
+}
+
+// --- Resuming after interruptions ----------------------------------------------
+
+export const IMPORT_ALARM = 'leetlink-import';
+/** Collecting saves progress after every page; this long without progress means it stopped. */
+const COLLECT_STALL_MS = 90_000;
+
+/** Keeps a once-a-minute alarm while an import is active, so it survives the worker stopping. */
+export async function ensureImportAlarm(): Promise<void> {
+  const state = await getImportState();
+  if (state.status === 'collecting' || state.status === 'importing') {
+    await chrome.alarms.create(IMPORT_ALARM, { periodInMinutes: 1 });
+  } else {
+    await chrome.alarms.clear(IMPORT_ALARM);
+  }
+}
+
+/**
+ * Continues an import that stopped without being paused: the worker was shut
+ * down, the browser restarted, the LeetCode tab was closed or reloaded, or a
+ * temporary failure has finished waiting. Called on startup and by the alarm.
+ */
+export async function resumeIfInterrupted(): Promise<void> {
+  const state = await getImportState();
+  if (state.status === 'importing') {
+    if (state.waitUntil <= Date.now()) await runImport();
+  } else if (state.status === 'collecting' && Date.now() - state.updatedAt > COLLECT_STALL_MS) {
+    try {
+      const reply = await askLeetCodeTab<SimpleResponse>({ type: 'leetcodeCollect' }, false);
+      if (!reply.ok) await updateImportState({ error: reply.error });
+    } catch (err) {
+      // No LeetCode tab: wait for one rather than opening tabs unasked.
+      await updateImportState({ error: errorText(err) });
+    }
+  }
+  await ensureImportAlarm();
 }

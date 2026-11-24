@@ -111,11 +111,14 @@ export function mountImportPanel(container: HTMLElement, options: ImportPanelOpt
   function renderActive(current: ImportState): HTMLElement[] {
     const pause = button('Pause', () => void request({ type: 'importPause' }));
     const cancel = button('Cancel', () => void request({ type: 'importCancel' }));
+    // While active, `error` holds a hint such as a retry time or "open leetcode.com".
+    const hint = current.error ? [text(current.error, 'll-import-hint')] : [];
     if (current.status === 'collecting') {
       return [
         text('Reading your LeetCode submissions. Keep a LeetCode tab open.'),
         progressBar(null, 'Reading submissions'),
         text(`${current.collect.scanned} scanned, ${current.total} accepted found.`, 'll-import-detail'),
+        ...hint,
         actions(pause, cancel),
       ];
     }
@@ -124,6 +127,7 @@ export function mountImportPanel(container: HTMLElement, options: ImportPanelOpt
       text(`Importing ${current.next} / ${current.total}`),
       progressBar(fraction, 'Import progress'),
       text(summary(current), 'll-import-detail'),
+      ...hint,
       actions(pause, cancel),
     ];
   }

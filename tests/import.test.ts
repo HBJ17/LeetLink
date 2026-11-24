@@ -13,6 +13,7 @@ vi.stubGlobal('chrome', {
       set: async (items: Record<string, unknown>) => Object.assign(store, items),
     },
   },
+  alarms: { create: vi.fn(async () => undefined), clear: vi.fn(async () => true) },
 });
 
 interface FakeCommit {
@@ -229,5 +230,43 @@ describe('resumeImport', () => {
     await vi.waitFor(() => expect(state().status).toBe('done'), { timeout: 10_000 });
     expect(commits.map((c) => Object.values(c.files)[0])).toEqual(['b()']);
     expect(state()).toMatchObject({ next: 2, pushed: 2 });
+  });
+});
+
+describe('interrupted imports', () => {
+  it('waits after a temporary failure instead of stopping, then continues', async () => {
+    const { HttpError } = await import('../src/lib/http');
+    const { resumeIfInterrupted } = await import('../src/background/backfill');
+    failUpdateRef = new HttpError(0, 'Network error. Check your connection.');
+    startWith([item('1', twoSum, 'a()', '2024-01-01T00:00:00Z')]);
+
+    await runImport({ sleep: noSleep });
+    expect(state().status).toBe('importing');
+    expect(state().waitUntil).toBeGreaterThan(Date.now());
+    expect(state().error).toContain('Network error. Check your connection.');
+
+    // Not due yet: nothing happens.
+    failUpdateRef = null;
+    await resumeIfInterrupted();
+    expect(commits).toHaveLength(0);
+
+    // Once the wait is over, the alarm continues the import.
+    (store['importState'] as ImportState).waitUntil = Date.now() - 1;
+    await resumeIfInterrupted();
+    expect(commits).toHaveLength(1);
+    expect(state()).toMatchObject({ status: 'done', next: 1, error: null });
+  });
+
+  it('picks up a running import after the worker restarts', async () => {
+    const { resumeIfInterrupted } = await import('../src/background/backfill');
+    startWith([item('1', twoSum, 'a()', '2024-01-01T00:00:00Z'), item('2', twoSum, 'b()', '2024-01-02T00:00:00Z')], {
+      next: 1,
+      pushed: 1,
+    });
+    files['0001_two-sum/two-sum_py_1.py'] = 'a()';
+
+    await resumeIfInterrupted();
+    expect(commits.map((c) => Object.values(c.files)[0])).toEqual(['b()']);
+    expect(state()).toMatchObject({ status: 'done', next: 2 });
   });
 });
