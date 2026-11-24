@@ -56,8 +56,18 @@ export interface PushRequest {
 
 export type PushResponse =
   | { ok: true; commitUrl: string; path: string }
-  /** `duplicatePath` is set when the push was refused because the code is already committed there. */
-  | { ok: false; error: string; duplicatePath?: string };
+  | {
+      ok: false;
+      error: string;
+      /** Set when the push was refused because the code is already committed there. */
+      duplicatePath?: string;
+      /** The failure is temporary (offline, rate limit, server error), so the push can be retried. */
+      retryable?: boolean;
+      /** Earliest Unix time in ms worth retrying at, when GitHub says (rate limits). */
+      notBefore?: number;
+      /** Set when the push was added to the retry queue; the next attempt's Unix time in ms. */
+      retryAt?: number;
+    };
 
 export interface DuplicateCheckRequest {
   problem: ProblemInfo;

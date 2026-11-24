@@ -97,3 +97,17 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
     return body as T;
   }
 }
+
+/**
+ * True for failures that may succeed later without the user doing anything:
+ * no connection, rate limits and GitHub server errors.
+ */
+export function isTransientError(err: unknown): boolean {
+  if (err instanceof RateLimitError) return true;
+  return err instanceof HttpError && (err.status === 0 || err.status >= 500);
+}
+
+/** When a transient failure says it is worth trying again, if it says. */
+export function retryAfter(err: unknown): Date | null {
+  return err instanceof RateLimitError ? err.resetAt : null;
+}

@@ -131,6 +131,21 @@ describe('pushSubmission', () => {
     expect(result).toMatchObject({ ok: true, path: 'lcp-01_guess-numbers/guess-numbers_py_2.py' });
   });
 
+  it('marks network failures as retryable and access failures as final', async () => {
+    const { HttpError } = await import('../src/lib/http');
+    const getRef = vi.spyOn(FakeClient.prototype, 'getRef');
+
+    getRef.mockRejectedValueOnce(new HttpError(0, 'Network error. Check your connection.'));
+    expect(await pushSubmission(request())).toMatchObject({ ok: false, retryable: true });
+
+    getRef.mockRejectedValueOnce(new HttpError(401, '401: Bad credentials'));
+    const denied = await pushSubmission(request());
+    expect(denied).toMatchObject({ ok: false, error: 'GitHub token is invalid or expired.' });
+    expect(denied).not.toHaveProperty('retryable');
+
+    getRef.mockRestore();
+  });
+
   it('appends notes to an existing README', async () => {
     files['0001_two-sum/README.md'] = '# 1. Two Sum\n\nOld notes\n';
     await pushSubmission(request({ notes: 'Use a hash map.' }));

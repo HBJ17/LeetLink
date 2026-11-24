@@ -1,7 +1,7 @@
 // Pushes one submission (and optional notes) to the connected repository.
 
 import { describeGitHubError, EmptyRepositoryError, GitHubClient, type FileChange } from '../lib/github';
-import { HttpError } from '../lib/http';
+import { HttpError, isTransientError, retryAfter } from '../lib/http';
 import { problemUrl } from '../lib/leetcode';
 import { gitBlobSha } from '../lib/hash';
 import type {
@@ -182,6 +182,10 @@ export async function pushSubmission(req: PushRequest): Promise<PushResponse> {
     if (err instanceof DuplicateError) {
       return { ok: false, error: `Already committed as ${err.path}.`, duplicatePath: err.path };
     }
-    return { ok: false, error: failureMessage(err, client) };
+    const failure: PushResponse = { ok: false, error: failureMessage(err, client) };
+    if (isTransientError(err)) failure.retryable = true;
+    const after = retryAfter(err);
+    if (after) failure.notBefore = after.getTime();
+    return failure;
   }
 }

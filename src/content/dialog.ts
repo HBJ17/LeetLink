@@ -11,8 +11,11 @@ export interface CommitDraft {
 
 export type CommitOutcome =
   | { ok: true; commitUrl: string }
-  /** `duplicatePath` is set when identical code is already committed there. */
-  | { ok: false; error: string; duplicatePath?: string };
+  /**
+   * `duplicatePath` is set when identical code is already committed there.
+   * `retryAt` is set when the push was queued to be retried automatically.
+   */
+  | { ok: false; error: string; duplicatePath?: string; retryAt?: number };
 
 export interface CommitDialogOptions {
   /** Shown as the dialog heading, e.g. `0001. Two Sum`. */
@@ -230,6 +233,11 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
         skipButton.textContent = 'Close';
         commitButton.hidden = true;
         closeTimer = window.setTimeout(close, AUTO_CLOSE_MS);
+      } else if (outcome.retryAt !== undefined) {
+        // Queued in the background: offering "Try again" here would queue it twice.
+        setStatus(`${outcome.error} Saved; LeetLink will retry automatically.`);
+        skipButton.textContent = 'Close';
+        commitButton.hidden = true;
       } else if (outcome.duplicatePath) {
         // The push found a copy the early check missed. Warn, and let the next click commit anyway.
         commitButton.disabled = false;
@@ -338,6 +346,9 @@ export function showPushNotice(label: string, push: Promise<CommitOutcome>): voi
         window.setTimeout(() => host.remove(), AUTO_CLOSE_MS);
       } else if (outcome.duplicatePath) {
         text.textContent = `Skipped: already committed as ${outcome.duplicatePath}.`;
+        window.setTimeout(() => host.remove(), AUTO_CLOSE_MS);
+      } else if (outcome.retryAt !== undefined) {
+        text.textContent = `${outcome.error} Saved; LeetLink will retry automatically.`;
         window.setTimeout(() => host.remove(), AUTO_CLOSE_MS);
       } else {
         text.className = 'error';

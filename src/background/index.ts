@@ -1,8 +1,10 @@
-// Background service worker. Handles requests from content scripts.
-// It can be stopped whenever it is idle, so it keeps no state in memory.
+// Background service worker. Handles requests from content scripts and
+// retries queued pushes. It can be stopped whenever it is idle, so it keeps
+// no state in memory.
 
 import type { BackgroundRequest, DuplicateCheckResponse, PushResponse } from '../lib/messages';
-import { findCommittedCopy, pushSubmission } from './push';
+import { findCommittedCopy } from './push';
+import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
 
 function isBackgroundRequest(value: unknown): value is BackgroundRequest {
   if (typeof value !== 'object' || value === null) return false;
@@ -13,14 +15,25 @@ function isBackgroundRequest(value: unknown): value is BackgroundRequest {
 function handle(request: BackgroundRequest): Promise<PushResponse | DuplicateCheckResponse> {
   switch (request.type) {
     case 'push':
-      return pushSubmission(request.payload);
+      return pushOrQueue(request.payload);
     case 'checkDuplicate':
       return findCommittedCopy(request.payload);
   }
 }
 
+function retryQueued(): void {
+  processQueue().catch((err: unknown) => console.error('[LeetLink] Retry failed:', err));
+}
+
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === chrome.runtime.OnInstalledReason.INSTALL) void chrome.runtime.openOptionsPage();
+  retryQueued();
+});
+
+chrome.runtime.onStartup.addListener(retryQueued);
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === RETRY_ALARM) retryQueued();
 });
 
 chrome.runtime.onMessage.addListener(

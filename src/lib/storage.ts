@@ -1,6 +1,8 @@
 // Typed wrapper over chrome.storage. All persistent state goes through here;
 // the background worker can be stopped at any time, so nothing is kept in memory.
 
+import type { PushRequest } from './messages';
+
 export type PushMode = 'accepted' | 'all';
 
 export interface Settings {
@@ -54,4 +56,28 @@ export async function updateSettings(changes: Partial<Settings>): Promise<Settin
 
 export function isConnected(settings: Settings): boolean {
   return Boolean(settings.token && settings.owner && settings.repo);
+}
+
+/** A push that failed for a temporary reason and will be tried again. */
+export interface QueuedPush {
+  id: string;
+  request: PushRequest;
+  /** Failed attempts so far. */
+  attempts: number;
+  /** Unix time in milliseconds of the next attempt. */
+  nextAttemptAt: number;
+  lastError: string;
+  createdAt: number;
+}
+
+const QUEUE_KEY = 'retryQueue';
+
+export async function getRetryQueue(): Promise<QueuedPush[]> {
+  const stored = await chrome.storage.local.get(QUEUE_KEY);
+  const value = stored[QUEUE_KEY] as QueuedPush[] | undefined;
+  return Array.isArray(value) ? value : [];
+}
+
+export async function setRetryQueue(queue: readonly QueuedPush[]): Promise<void> {
+  await chrome.storage.local.set({ [QUEUE_KEY]: queue });
 }
