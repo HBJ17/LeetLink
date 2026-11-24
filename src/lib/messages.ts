@@ -86,7 +86,26 @@ export type PushPreviewResponse = ({ ok: true } & PushPreview) | { ok: false; er
 
 export type BackgroundRequest =
   | { type: 'push'; payload: PushRequest }
-  | { type: 'previewPush'; payload: PushPreviewRequest };
+  | { type: 'previewPush'; payload: PushPreviewRequest }
+  /** From the popup or settings page: how many problems the user has solved. */
+  | { type: 'importCount' }
+  /** From the popup or settings page: start importing past submissions. */
+  | { type: 'importStart' }
+  /** From a LeetCode tab: collecting finished, so committing can start. */
+  | { type: 'importCollected' };
+
+export type ImportCountResponse = { ok: true; username: string; solved: number } | { ok: false; error: string };
+
+export type SimpleResponse = { ok: true } | { ok: false; error: string };
+
+/** Sent from the background worker to a LeetCode tab, which does the LeetCode requests. */
+export type LeetCodeTabRequest = { type: 'leetcodeSolvedCount' } | { type: 'leetcodeCollect' };
+
+export function isLeetCodeTabRequest(value: unknown): value is LeetCodeTabRequest {
+  if (typeof value !== 'object' || value === null) return false;
+  const type = (value as { type?: unknown }).type;
+  return type === 'leetcodeSolvedCount' || type === 'leetcodeCollect';
+}
 
 /** Sent from the background worker to LeetCode tabs when a queued push finishes. */
 export interface QueuedPushResult {

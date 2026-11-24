@@ -38,10 +38,11 @@ for (const [name, entry] of Object.entries(entries)) {
   first = false;
 }
 
-// Extension pages (options, later the popup) are plain HTML entries and can
+// Extension pages (options and popup) are plain HTML entries and can
 // use ES modules, so they share one build.
 const pages = {
   options: 'src/options/index.html',
+  popup: 'src/popup/index.html',
 };
 
 await build({

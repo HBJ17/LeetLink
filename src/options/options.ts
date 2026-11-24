@@ -5,7 +5,8 @@ import { GitHubClient, parseRepoLink, repoWebUrl } from '../lib/github';
 import { ACCEPTED_STATUS } from '../lib/messages';
 import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage, TEMPLATE_PLACEHOLDERS, type MessageContext } from '../lib/naming';
 import { scanRepository, type ProblemFolder } from '../lib/repo-scan';
-import { getSettings, updateSettings, type ExistingRepoChoice, type Settings } from '../lib/storage';
+import { getSettings, isConnected, updateSettings, type ExistingRepoChoice, type Settings } from '../lib/storage';
+import { mountImportPanel } from '../ui/import-panel';
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -53,7 +54,21 @@ function setStatus(text: string, kind: 'info' | 'ok' | 'error' = 'info'): void {
   status.textContent = text;
 }
 
+let importMounted = false;
+
+/** The import prompt appears once a repository is connected. */
+function showImportPanel(settings: Settings): void {
+  if (importMounted || !isConnected(settings)) return;
+  importMounted = true;
+  byId<HTMLElement>('import-section').hidden = false;
+  mountImportPanel(byId<HTMLElement>('import'), {
+    prompt: 'Import your past accepted submissions?',
+    allowDismiss: true,
+  });
+}
+
 function render(settings: Settings): void {
+  showImportPanel(settings);
   repoInput.value = settings.owner && settings.repo ? repoWebUrl(settings) : '';
   branchInput.value = settings.branch;
   tokenInput.value = '';

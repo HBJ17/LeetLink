@@ -1,0 +1,45 @@
+.ll-import-text {
+  margin: 0 0 10px;
+  color: #cfcfcf;
+  font-size: 13px;
+}
+
+.ll-import-detail {
+  margin: 0 0 10px;
+  color: #9a9a9a;
+  font-size: 12px;
+}
+
+.ll-import-error {
+  margin: 0 0 10px;
+  color: #ff7b7b;
+  font-size: 13px;
+}
+
+.ll-import-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ll-import-button {
+  padding: 7px 14px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: transparent;
+  color: #cfcfcf;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ll-import-button.primary {
+  border-color: #ffd600;
+  background: #ffd600;
+  color: #161616;
+}
+
+.ll-import-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

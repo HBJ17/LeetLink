@@ -5,6 +5,7 @@ import { fetchProblem } from '../lib/leetcode';
 import {
   ACCEPTED_STATUS,
   isHookMessage,
+  isLeetCodeTabRequest,
   isQueuedPushResult,
   type BackgroundRequest,
   type ProblemInfo,
@@ -16,6 +17,7 @@ import {
 import { DEFAULT_MESSAGE_TEMPLATE, renderCommitMessage } from '../lib/naming';
 import { getSettings } from '../lib/storage';
 import { openCommitDialog, type CommitDraft, type CommitOutcome } from './dialog';
+import { handleLeetCodeTabRequest } from './import-runner';
 import { outcomeToast, showToast, trackPush } from './toast';
 
 async function push(problem: ProblemInfo, submission: SubmissionResult, draft: CommitDraft): Promise<CommitOutcome> {
@@ -71,4 +73,10 @@ chrome.runtime.onMessage.addListener((message: unknown, sender) => {
   const { response } = message;
   showToast(outcomeToast(message.label, response.ok ? { ok: true, commitUrl: response.commitUrl } : response));
   return false;
+});
+
+// Import requests from the background worker.
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || !isLeetCodeTabRequest(message)) return false;
+  return handleLeetCodeTabRequest(message, sendResponse);
 });

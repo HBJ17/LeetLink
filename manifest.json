@@ -4,10 +4,14 @@
   "version": "0.1.0",
   "description": "Push your LeetCode submissions to a GitHub repository.",
   "minimum_chrome_version": "111",
-  "permissions": ["storage", "alarms"],
+  "permissions": ["storage", "alarms", "unlimitedStorage"],
   "host_permissions": ["https://leetcode.com/*", "https://api.github.com/*"],
   "background": {
     "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "LeetLink",
+    "default_popup": "popup/index.html"
   },
   "options_ui": {
     "page": "options/index.html",

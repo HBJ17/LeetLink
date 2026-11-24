@@ -2,23 +2,42 @@
 // retries queued pushes. It can be stopped whenever it is idle, so it keeps
 // no state in memory.
 
-import type { BackgroundRequest, PushPreviewResponse, PushResponse, QueuedPushResult } from '../lib/messages';
+import type {
+  BackgroundRequest,
+  ImportCountResponse,
+  PushPreviewResponse,
+  PushResponse,
+  QueuedPushResult,
+  SimpleResponse,
+} from '../lib/messages';
 import type { QueuedPush } from '../lib/storage';
+import { countSolved, startImport } from './backfill';
 import { previewPush } from './push';
 import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
 
 function isBackgroundRequest(value: unknown): value is BackgroundRequest {
   if (typeof value !== 'object' || value === null) return false;
   const type = (value as { type?: unknown }).type;
-  return type === 'push' || type === 'previewPush';
+  return (
+    type === 'push' || type === 'previewPush' || type === 'importCount' || type === 'importStart' || type === 'importCollected'
+  );
 }
 
-function handle(request: BackgroundRequest): Promise<PushResponse | PushPreviewResponse> {
+type BackgroundResponse = PushResponse | PushPreviewResponse | ImportCountResponse | SimpleResponse;
+
+function handle(request: BackgroundRequest): Promise<BackgroundResponse> {
   switch (request.type) {
     case 'push':
       return pushOrQueue(request.payload);
     case 'previewPush':
       return previewPush(request.payload);
+    case 'importCount':
+      return countSolved();
+    case 'importStart':
+      return startImport();
+    case 'importCollected':
+      // Committing the collected submissions is not wired up yet.
+      return Promise.resolve({ ok: true });
   }
 }
 
@@ -49,7 +68,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (r: PushResponse | PushPreviewResponse) => void) => {
+  (message: unknown, sender, sendResponse: (r: BackgroundResponse) => void) => {
     if (sender.id !== chrome.runtime.id || !isBackgroundRequest(message)) return false;
 
     handle(message)
