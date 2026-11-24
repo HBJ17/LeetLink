@@ -90,3 +90,39 @@ button.primary {
   font-weight: 600;
   cursor: pointer;
 }
+
+.small {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.mono {
+  margin: 0;
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  word-break: break-all;
+}
+
+section p {
+  margin: 0;
+}
+
+section p + p {
+  margin-top: 2px;
+}
+
+button.secondary {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

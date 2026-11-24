@@ -23,7 +23,7 @@ import {
   startImport,
 } from './backfill';
 import { previewPush } from './push';
-import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
+import { processQueue, pushOrQueue, RETRY_ALARM, retryNow } from './queue';
 
 const REQUEST_TYPES: ReadonlySet<string> = new Set<BackgroundRequest['type']>([
   'push',
@@ -34,6 +34,7 @@ const REQUEST_TYPES: ReadonlySet<string> = new Set<BackgroundRequest['type']>([
   'importPause',
   'importResume',
   'importCancel',
+  'retryQueueNow',
 ]);
 
 function isBackgroundRequest(value: unknown): value is BackgroundRequest {
@@ -63,6 +64,8 @@ function handle(request: BackgroundRequest): Promise<BackgroundResponse> {
       return resumeImport();
     case 'importCancel':
       return cancelImport();
+    case 'retryQueueNow':
+      return retryNow(announceLater).then(() => ({ ok: true }));
   }
 }
 
@@ -79,8 +82,12 @@ function resumeImports(): void {
   resumeIfInterrupted().catch((err: unknown) => console.error('[LeetLink] Import resume failed:', err));
 }
 
+function announceLater(item: QueuedPush, response: PushResponse): void {
+  announce(item, response).catch(() => undefined);
+}
+
 function retryQueued(): void {
-  processQueue((item, response) => void announce(item, response).catch(() => undefined)).catch((err: unknown) =>
+  processQueue(announceLater).catch((err: unknown) =>
     console.error('[LeetLink] Retry failed:', err),
   );
 }

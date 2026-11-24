@@ -96,7 +96,9 @@ export type BackgroundRequest =
   /** From the popup or settings page: pause, resume or cancel the running import. */
   | { type: 'importPause' }
   | { type: 'importResume' }
-  | { type: 'importCancel' };
+  | { type: 'importCancel' }
+  /** From the popup: retry every queued push now instead of waiting. */
+  | { type: 'retryQueueNow' };
 
 export type ImportCountResponse = { ok: true; username: string; solved: number } | { ok: false; error: string };
 

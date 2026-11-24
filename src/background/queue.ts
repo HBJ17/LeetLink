@@ -7,7 +7,7 @@
 // every attempt, so a retry never overwrites something pushed in the meantime.
 
 import type { PushRequest, PushResponse } from '../lib/messages';
-import { getRetryQueue, setRetryQueue, type QueuedPush } from '../lib/storage';
+import { getRetryQueue, setLastPush, setRetryQueue, type QueuedPush } from '../lib/storage';
 import { pushSubmission } from './push';
 
 export const RETRY_ALARM = 'leetlink-retry';
@@ -18,6 +18,15 @@ const MINUTE = 60_000;
 
 /** Called with the final outcome of a queued push (success or a failure that will not be retried). */
 export type QueueListener = (item: QueuedPush, response: PushResponse) => void;
+
+/** Pushes and remembers a success, so the popup can show the last push. */
+async function attempt(request: PushRequest): Promise<PushResponse> {
+  const response = await pushSubmission(request);
+  if (response.ok) {
+    await setLastPush({ message: request.message, commitUrl: response.commitUrl, path: response.path, at: Date.now() });
+  }
+  return response;
+}
 
 export function backoffDelay(attempts: number): number {
   const index = Math.min(Math.max(attempts, 1), BACKOFF_MINUTES.length) - 1;
@@ -80,7 +89,7 @@ export function processQueue(onDone: QueueListener = () => undefined): Promise<v
         remaining.push(item);
         continue;
       }
-      const response = await pushSubmission(item.request);
+      const response = await attempt(item.request);
       if (!response.ok && response.retryable) {
         const attempts = item.attempts + 1;
         remaining.push({
@@ -104,8 +113,17 @@ export function processQueue(onDone: QueueListener = () => undefined): Promise<v
  * failure comes back with `retryAt` set.
  */
 export async function pushOrQueue(request: PushRequest): Promise<PushResponse> {
-  const response = await pushSubmission(request);
+  const response = await attempt(request);
   if (response.ok || !response.retryable) return response;
   const item = await enqueue(request, response);
   return { ...response, retryAt: item.nextAttemptAt };
+}
+
+/** Makes every queued push due now and retries them, for the popup's "Retry now" button. */
+export async function retryNow(onDone: QueueListener = () => undefined): Promise<void> {
+  await serialized(async () => {
+    const now = Date.now();
+    await setRetryQueue((await getRetryQueue()).map((item) => ({ ...item, nextAttemptAt: now })));
+  });
+  await processQueue(onDone);
 }

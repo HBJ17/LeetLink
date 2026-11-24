@@ -19,7 +19,7 @@ vi.stubGlobal('chrome', {
 const pushSubmission = vi.fn<(req: PushRequest) => Promise<PushResponse>>();
 vi.mock('../src/background/push', () => ({ pushSubmission: (req: PushRequest) => pushSubmission(req) }));
 
-const { backoffDelay, processQueue, pushOrQueue } = await import('../src/background/queue');
+const { backoffDelay, processQueue, pushOrQueue, retryNow } = await import('../src/background/queue');
 
 const MINUTE = 60_000;
 const START = new Date('2026-01-01T12:00:00Z').getTime();
@@ -160,5 +160,32 @@ describe('processQueue', () => {
 
     expect(order).toEqual(['a', 'b']);
     expect(queue().map((item) => item.request.submission.submissionId)).toEqual(['a', 'b']);
+  });
+});
+
+describe('dashboard data', () => {
+  it('remembers the last successful push', async () => {
+    pushSubmission.mockResolvedValue(pushed);
+    await pushOrQueue(request('1'));
+    expect(store['lastPush']).toEqual({ message: '0001_two-sum', commitUrl: 'https://github.com/me/r/commit/c1', path: '0001_two-sum/a.py', at: START });
+  });
+
+  it('does not record failed pushes', async () => {
+    pushSubmission.mockResolvedValue(offline);
+    await pushOrQueue(request('1'));
+    expect(store['lastPush']).toBeUndefined();
+  });
+
+  it('retries every queued push at once on request', async () => {
+    pushSubmission.mockResolvedValue(offline);
+    await pushOrQueue(request('a'));
+    await pushOrQueue(request('b'));
+    pushSubmission.mockResolvedValue(pushed);
+
+    const done = vi.fn();
+    await retryNow(done);
+    expect(queue()).toEqual([]);
+    expect(done).toHaveBeenCalledTimes(2);
+    expect(store['lastPush']).toMatchObject({ commitUrl: pushed.ok ? pushed.commitUrl : '' });
   });
 });

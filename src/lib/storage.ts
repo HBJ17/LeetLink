@@ -149,3 +149,23 @@ export async function getImportItems(): Promise<ImportItem[]> {
 export async function setImportItems(items: readonly ImportItem[]): Promise<void> {
   await chrome.storage.local.set({ [IMPORT_ITEMS_KEY]: items });
 }
+
+/** The most recent successful push, shown in the popup. */
+export interface LastPush {
+  message: string;
+  commitUrl: string;
+  path: string;
+  /** Unix time in ms. */
+  at: number;
+}
+
+const LAST_PUSH_KEY = 'lastPush';
+
+export async function getLastPush(): Promise<LastPush | null> {
+  const stored = await chrome.storage.local.get(LAST_PUSH_KEY);
+  return (stored[LAST_PUSH_KEY] as LastPush | undefined) ?? null;
+}
+
+export async function setLastPush(push: LastPush): Promise<void> {
+  await chrome.storage.local.set({ [LAST_PUSH_KEY]: push });
+}
