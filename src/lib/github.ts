@@ -79,6 +79,14 @@ export interface TreeEntry {
   sha: string;
 }
 
+/** A tree entry whose file content is sent inline instead of as a blob. */
+export interface InlineTreeEntry {
+  path: string;
+  mode: '100644';
+  type: 'blob';
+  content: string;
+}
+
 export interface CommitResult {
   sha: string;
   htmlUrl: string;
@@ -165,7 +173,11 @@ export class GitHubClient {
   ) {}
 
   private call<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    return request<T>(`${API}/repos/${this.owner}/${this.repo}${path}`, {
+    return this.api<T>(`/repos/${this.owner}/${this.repo}${path}`, options);
+  }
+
+  private api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return request<T>(`${API}${path}`, {
       ...options,
       headers: {
         Accept: 'application/vnd.github+json',
@@ -298,7 +310,22 @@ export class GitHubClient {
     return blob.sha;
   }
 
-  async createTree(baseTree: string | null, entries: TreeEntry[]): Promise<string> {
+  /** The account the token belongs to. */
+  async getAuthenticatedUser(): Promise<{ login: string; id: number; name: string | null }> {
+    return this.api<{ login: string; id: number; name: string | null }>('/user');
+  }
+
+  /**
+   * The account's GitHub-provided noreply identity. Commits with this email
+   * count on the account's contribution graph without exposing a real address.
+   */
+  async getNoreplyIdentity(): Promise<{ name: string; email: string }> {
+    const user = await this.getAuthenticatedUser();
+    return { name: user.name || user.login, email: `${user.id}+${user.login}@users.noreply.github.com` };
+  }
+
+  /** Entries may carry `content` instead of a blob `sha`; GitHub then creates the blob itself. */
+  async createTree(baseTree: string | null, entries: (TreeEntry | InlineTreeEntry)[]): Promise<string> {
     const json: Record<string, unknown> = { tree: entries };
     if (baseTree) json['base_tree'] = baseTree;
     const tree = await this.call<{ sha: string }>('/git/trees', { method: 'POST', json });
@@ -328,12 +355,16 @@ export class GitHubClient {
   }
 
   /** Creates a file with the Contents API. Only used for the first commit in an empty repository. */
-  async createFileWithContentsApi(branch: string, file: FileChange, message: string): Promise<string> {
+  async createFileWithContentsApi(
+    branch: string,
+    file: FileChange,
+    message: string,
+    identity?: { author: GitIdentity; committer: GitIdentity },
+  ): Promise<string> {
     const encodedPath = file.path.split('/').map(encodeURIComponent).join('/');
-    const result = await this.call<{ commit: { sha: string } }>(`/contents/${encodedPath}`, {
-      method: 'PUT',
-      json: { message, content: utf8ToBase64(file.content), branch },
-    });
+    const json: Record<string, unknown> = { message, content: utf8ToBase64(file.content), branch };
+    if (identity) Object.assign(json, identity);
+    const result = await this.call<{ commit: { sha: string } }>(`/contents/${encodedPath}`, { method: 'PUT', json });
     return result.commit.sha;
   }
 

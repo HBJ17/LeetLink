@@ -70,11 +70,11 @@ async function locateProblemFolder(
  * The next file name for this submission in `folder`: numbered per language
  * after the files already there, so nothing is overwritten.
  */
-function planSolutionFile(
+export function planSolutionFile(
   folder: string,
   existing: readonly FolderFile[],
-  problem: ProblemInfo,
-  submission: SubmissionResult,
+  problem: Pick<ProblemInfo, 'titleSlug'>,
+  submission: Pick<SubmissionResult, 'lang' | 'statusCode' | 'statusMsg'>,
 ): { fileName: string; path: string } {
   const names = existing.map((f) => f.name);
   const sequence = nextSequence(names, problem.titleSlug, submission.lang);
@@ -84,7 +84,7 @@ function planSolutionFile(
 }
 
 /** Path of a file in `folder` with exactly this code, or null. */
-async function findCopy(folder: string, existing: readonly FolderFile[], code: string): Promise<string | null> {
+export async function findCopy(folder: string, existing: readonly FolderFile[], code: string): Promise<string | null> {
   const sha = await gitBlobSha(code);
   const same = existing.find((f) => f.sha === sha);
   return same ? `${folder}/${same.name}` : null;

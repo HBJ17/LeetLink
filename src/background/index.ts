@@ -11,7 +11,7 @@ import type {
   SimpleResponse,
 } from '../lib/messages';
 import type { QueuedPush } from '../lib/storage';
-import { countSolved, startImport } from './backfill';
+import { countSolved, runImport, startImport } from './backfill';
 import { previewPush } from './push';
 import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
 
@@ -36,7 +36,7 @@ function handle(request: BackgroundRequest): Promise<BackgroundResponse> {
     case 'importStart':
       return startImport();
     case 'importCollected':
-      // Committing the collected submissions is not wired up yet.
+      void runImport();
       return Promise.resolve({ ok: true });
   }
 }
