@@ -1,7 +1,7 @@
 // Typed wrapper over chrome.storage. All persistent state goes through here;
 // the background worker can be stopped at any time, so nothing is kept in memory.
 
-import type { PushRequest } from './messages';
+import type { ProblemInfo, PushRequest } from './messages';
 
 export type PushMode = 'accepted' | 'all';
 
@@ -80,4 +80,72 @@ export async function getRetryQueue(): Promise<QueuedPush[]> {
 
 export async function setRetryQueue(queue: readonly QueuedPush[]): Promise<void> {
   await chrome.storage.local.set({ [QUEUE_KEY]: queue });
+}
+
+/** One past accepted submission, collected from LeetCode and ready to commit. */
+export interface ImportItem {
+  submissionId: string;
+  problem: ProblemInfo;
+  lang: string;
+  code: string;
+  /** When it was submitted, Unix time in ms. */
+  timestamp: number;
+  runtime: string | null;
+  memory: string | null;
+}
+
+export type ImportStatus = 'idle' | 'collecting' | 'importing' | 'paused' | 'done' | 'cancelled' | 'error';
+
+/** Progress of importing past submissions. Small, so it is rewritten after every step. */
+export interface ImportState {
+  status: ImportStatus;
+  /** Where collecting from LeetCode's submission list got to. */
+  collect: { offset: number; lastKey: string | null; scanned: number; done: boolean };
+  /** Items collected so far (stored separately, see getImportItems). */
+  total: number;
+  /** Index of the next item to commit. */
+  next: number;
+  pushed: number;
+  skipped: number;
+  error: string | null;
+  /** Unix time in ms before which no work should start (rate limits, retries). */
+  waitUntil: number;
+  updatedAt: number;
+}
+
+export const IDLE_IMPORT: Readonly<ImportState> = {
+  status: 'idle',
+  collect: { offset: 0, lastKey: null, scanned: 0, done: false },
+  total: 0,
+  next: 0,
+  pushed: 0,
+  skipped: 0,
+  error: null,
+  waitUntil: 0,
+  updatedAt: 0,
+};
+
+const IMPORT_STATE_KEY = 'importState';
+const IMPORT_ITEMS_KEY = 'importItems';
+
+export async function getImportState(): Promise<ImportState> {
+  const stored = await chrome.storage.local.get(IMPORT_STATE_KEY);
+  const value = stored[IMPORT_STATE_KEY] as Partial<ImportState> | undefined;
+  return { ...IDLE_IMPORT, ...value };
+}
+
+export async function updateImportState(changes: Partial<ImportState>): Promise<ImportState> {
+  const next = { ...(await getImportState()), ...changes, updatedAt: Date.now() };
+  await chrome.storage.local.set({ [IMPORT_STATE_KEY]: next });
+  return next;
+}
+
+export async function getImportItems(): Promise<ImportItem[]> {
+  const stored = await chrome.storage.local.get(IMPORT_ITEMS_KEY);
+  const value = stored[IMPORT_ITEMS_KEY] as ImportItem[] | undefined;
+  return Array.isArray(value) ? value : [];
+}
+
+export async function setImportItems(items: readonly ImportItem[]): Promise<void> {
+  await chrome.storage.local.set({ [IMPORT_ITEMS_KEY]: items });
 }

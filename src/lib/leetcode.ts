@@ -78,3 +78,115 @@ export async function fetchProblem(titleSlug: string): Promise<ProblemInfo> {
 export function problemUrl(titleSlug: string): string {
   return `https://leetcode.com/problems/${titleSlug}/`;
 }
+
+// --- Submission history (used by the import) ---------------------------------
+
+/** One row of the user's submission list. */
+export interface HistorySubmission {
+  submissionId: string;
+  titleSlug: string;
+  title: string;
+  lang: string;
+  accepted: boolean;
+  /** Unix time in ms. */
+  timestamp: number;
+  runtime: string | null;
+  memory: string | null;
+}
+
+export interface HistoryPage {
+  submissions: HistorySubmission[];
+  hasNext: boolean;
+  lastKey: string | null;
+}
+
+const SUBMISSION_LIST_QUERY = `
+  query leetlinkSubmissionList($offset: Int!, $limit: Int!, $lastKey: String) {
+    submissionList(offset: $offset, limit: $limit, lastKey: $lastKey) {
+      lastKey
+      hasNext
+      submissions { id title titleSlug statusDisplay lang runtime memory timestamp }
+    }
+  }
+`;
+
+interface SubmissionListData {
+  submissionList: {
+    lastKey: string | null;
+    hasNext: boolean;
+    submissions: {
+      id: string;
+      title: string;
+      titleSlug: string;
+      statusDisplay: string;
+      lang: string;
+      runtime: string | null;
+      memory: string | null;
+      timestamp: string;
+    }[];
+  } | null;
+}
+
+function display(value: string | null | undefined): string | null {
+  return value && value !== 'N/A' ? value : null;
+}
+
+/** One page of the signed-in user's submissions, newest first. */
+export async function fetchSubmissionPage(offset: number, limit: number, lastKey: string | null): Promise<HistoryPage> {
+  const data = await graphql<SubmissionListData>(SUBMISSION_LIST_QUERY, { offset, limit, lastKey });
+  const list = data.submissionList;
+  if (!list) throw new LeetCodeError('LeetCode did not return your submissions. Are you signed in?');
+  return {
+    hasNext: list.hasNext,
+    lastKey: list.lastKey,
+    submissions: list.submissions.map((s) => ({
+      submissionId: String(s.id),
+      titleSlug: s.titleSlug,
+      title: s.title,
+      lang: s.lang,
+      accepted: s.statusDisplay === 'Accepted',
+      timestamp: Number(s.timestamp) * 1000,
+      runtime: display(s.runtime),
+      memory: display(s.memory),
+    })),
+  };
+}
+
+const SUBMISSION_DETAILS_QUERY = `
+  query leetlinkSubmissionDetails($submissionId: Int!) {
+    submissionDetails(submissionId: $submissionId) { code }
+  }
+`;
+
+/** The code of one of the user's submissions. */
+export async function fetchSubmissionCode(submissionId: string): Promise<string> {
+  const data = await graphql<{ submissionDetails: { code: string } | null }>(SUBMISSION_DETAILS_QUERY, {
+    submissionId: Number(submissionId),
+  });
+  if (!data.submissionDetails) throw new LeetCodeError(`Submission ${submissionId} was not found`);
+  return data.submissionDetails.code;
+}
+
+const USER_STATUS_QUERY = `query leetlinkUserStatus { userStatus { username isSignedIn } }`;
+
+const SOLVED_QUERY = `
+  query leetlinkSolved($username: String!) {
+    matchedUser(username: $username) {
+      submitStatsGlobal { acSubmissionNum { difficulty count } }
+    }
+  }
+`;
+
+interface SolvedData {
+  matchedUser: { submitStatsGlobal: { acSubmissionNum: { difficulty: string; count: number }[] } } | null;
+}
+
+/** The signed-in username and how many problems they have solved. */
+export async function fetchSolvedCount(): Promise<{ username: string; solved: number }> {
+  const status = await graphql<{ userStatus: { username: string; isSignedIn: boolean } }>(USER_STATUS_QUERY, {});
+  if (!status.userStatus.isSignedIn) throw new LeetCodeError('Sign in to LeetCode first.');
+  const { username } = status.userStatus;
+  const data = await graphql<SolvedData>(SOLVED_QUERY, { username });
+  const all = data.matchedUser?.submitStatsGlobal.acSubmissionNum.find((n) => n.difficulty === 'All');
+  return { username, solved: all?.count ?? 0 };
+}
