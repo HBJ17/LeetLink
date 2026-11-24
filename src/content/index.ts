@@ -7,8 +7,9 @@ import {
   isHookMessage,
   isQueuedPushResult,
   type BackgroundRequest,
-  type DuplicateCheckResponse,
   type ProblemInfo,
+  type PushPreview,
+  type PushPreviewResponse,
   type PushResponse,
   type SubmissionResult,
 } from '../lib/messages';
@@ -24,11 +25,11 @@ async function push(problem: ProblemInfo, submission: SubmissionResult, draft: C
   return response.ok ? { ok: true, commitUrl: response.commitUrl } : response;
 }
 
-/** Path of an identical file already in the repository, or null (also when the check fails). */
-async function findCommittedCopy(problem: ProblemInfo, code: string): Promise<string | null> {
-  const request: BackgroundRequest = { type: 'checkDuplicate', payload: { problem, code } };
-  const response = (await chrome.runtime.sendMessage(request)) as DuplicateCheckResponse | undefined;
-  return response?.ok ? response.duplicatePath : null;
+/** Where the file would be saved and any identical copy, or null when the check fails. */
+async function previewPush(problem: ProblemInfo, submission: SubmissionResult): Promise<PushPreview | null> {
+  const request: BackgroundRequest = { type: 'previewPush', payload: { problem, submission } };
+  const response = (await chrome.runtime.sendMessage(request)) as PushPreviewResponse | undefined;
+  return response?.ok ? { targetPath: response.targetPath, duplicatePath: response.duplicatePath } : null;
 }
 
 async function handleSubmission(submission: SubmissionResult): Promise<void> {
@@ -51,7 +52,7 @@ async function handleSubmission(submission: SubmissionResult): Promise<void> {
     subheading: details.join(' · '),
     defaultMessage: message,
     notesByDefault: settings.notesByDefault,
-    duplicateCheck: findCommittedCopy(problem, submission.code).catch(() => null),
+    preview: previewPush(problem, submission).catch(() => null),
     onCommit: (draft) => push(problem, submission, draft),
   });
 }

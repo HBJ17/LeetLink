@@ -65,7 +65,7 @@ vi.mock('../src/lib/github', async (importOriginal) => ({
   GitHubClient: FakeClient,
 }));
 
-const { findCommittedCopy, pushSubmission } = await import('../src/background/push');
+const { previewPush, pushSubmission } = await import('../src/background/push');
 
 const problem: ProblemInfo = { frontendId: '1', title: 'Two Sum', titleSlug: 'two-sum', difficulty: 'Easy', topicTags: [] };
 const code = 'class Solution:\n    pass\n';
@@ -154,14 +154,45 @@ describe('pushSubmission', () => {
   });
 });
 
-describe('findCommittedCopy', () => {
-  it('finds identical code in a matching folder', async () => {
+describe('previewPush', () => {
+  it('finds identical code in a matching folder and names the next file', async () => {
     files['1-two-sum/solution.py'] = code;
-    expect(await findCommittedCopy({ problem, code })).toEqual({ ok: true, duplicatePath: '1-two-sum/solution.py' });
+    expect(await previewPush({ problem, submission })).toEqual({
+      ok: true,
+      targetPath: '1-two-sum/two-sum_py_1.py',
+      duplicatePath: '1-two-sum/solution.py',
+    });
   });
 
-  it('returns null for new code', async () => {
-    files['0001_two-sum/two-sum_py_1.py'] = 'print("other")\n';
-    expect(await findCommittedCopy({ problem, code })).toEqual({ ok: true, duplicatePath: null });
+  it('names the next file per language for new code', async () => {
+    files['0001_two-sum/two-sum_py_1.py'] = 'print("brute force")\n';
+    files['0001_two-sum/two-sum_cpp_1.cpp'] = 'int main() {}\n';
+    expect(await previewPush({ problem, submission })).toEqual({
+      ok: true,
+      targetPath: '0001_two-sum/two-sum_py_2.py',
+      duplicatePath: null,
+    });
+    expect(await previewPush({ problem, submission: { ...submission, lang: 'cpp' } })).toMatchObject({
+      targetPath: '0001_two-sum/two-sum_cpp_2.cpp',
+    });
+  });
+
+  it('includes the result in the name for non-accepted submissions', async () => {
+    const wrong = { ...submission, statusCode: 11, statusMsg: 'Wrong Answer' };
+    expect(await previewPush({ problem, submission: wrong })).toMatchObject({
+      targetPath: '0001_two-sum/two-sum_py_wrong-answer_1.py',
+    });
+  });
+
+  it('matches where the push actually saves the file', async () => {
+    files['0001_two-sum/two-sum_py_1.py'] = 'print("brute force")\n';
+    const preview = await previewPush({ problem, submission });
+    const result = await pushSubmission(request());
+    expect(result).toMatchObject({ ok: true, path: preview.ok ? preview.targetPath : 'preview failed' });
+  });
+
+  it('writes nothing', async () => {
+    await previewPush({ problem, submission });
+    expect(commits).toHaveLength(0);
   });
 });

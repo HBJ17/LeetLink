@@ -69,16 +69,24 @@ export type PushResponse =
       retryAt?: number;
     };
 
-export interface DuplicateCheckRequest {
+export interface PushPreviewRequest {
   problem: ProblemInfo;
-  code: string;
+  submission: SubmissionResult;
 }
 
-export type DuplicateCheckResponse = { ok: true; duplicatePath: string | null } | { ok: false; error: string };
+/** What a push would do right now, shown in the commit dialog before committing. */
+export interface PushPreview {
+  /** Where the solution would be saved, e.g. `0001_two-sum/two-sum_py_3.py`. */
+  targetPath: string;
+  /** A file with identical code already in the problem folder, or null. */
+  duplicatePath: string | null;
+}
+
+export type PushPreviewResponse = ({ ok: true } & PushPreview) | { ok: false; error: string };
 
 export type BackgroundRequest =
   | { type: 'push'; payload: PushRequest }
-  | { type: 'checkDuplicate'; payload: DuplicateCheckRequest };
+  | { type: 'previewPush'; payload: PushPreviewRequest };
 
 /** Sent from the background worker to LeetCode tabs when a queued push finishes. */
 export interface QueuedPushResult {

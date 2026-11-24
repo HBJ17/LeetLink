@@ -1,6 +1,8 @@
 // Commit dialog shown over the LeetCode page. Lives in a Shadow DOM so
 // LeetCode's styles cannot leak in and ours cannot leak out.
 
+import type { PushPreview } from '../lib/messages';
+
 export interface CommitDraft {
   message: string;
   /** Notes for README.md, or null for no README. */
@@ -26,11 +28,12 @@ export interface CommitDialogOptions {
   /** Open with the notes box shown instead of "No README". */
   notesByDefault?: boolean;
   /**
-   * Resolves to the path of a file with identical code, or null. While it is
-   * pending the dialog works normally; when it finds a copy, the dialog warns
-   * and moves the default to Skip.
+   * Resolves to where the file would be saved and any identical copy already
+   * committed, or null when that cannot be worked out. While it is pending the
+   * dialog works normally; when it finds a copy, the dialog warns and moves the
+   * default to Skip.
    */
-  duplicateCheck?: Promise<string | null>;
+  preview?: Promise<PushPreview | null>;
   /** Performs the push. The dialog shows progress and the result. */
   onCommit: (draft: CommitDraft) => Promise<CommitOutcome>;
 }
@@ -60,6 +63,8 @@ const STYLES = `
   h2 { margin: 10px 0 2px; font-size: 17px; font-weight: 600; }
   .sub { margin: 0 0 16px; color: #9a9a9a; font-size: 13px; }
   label.field { display: block; font-size: 12px; color: #b5b5b5; margin: 0 0 6px; }
+  .target { margin: 6px 0 0; min-height: 18px; font-size: 12px; color: #9a9a9a; word-break: break-all; }
+  .target code { font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: #cfcfcf; }
   input[type="text"], textarea {
     width: 100%; padding: 9px 11px;
     background: #0f0f0f; color: #f4f4f4;
@@ -105,6 +110,7 @@ const MARKUP = `
 
       <label class="field" for="ll-message">Commit message</label>
       <input id="ll-message" type="text" spellcheck="false" autocomplete="off" />
+      <p class="target"></p>
 
       <div class="notes">
         <label class="field">README</label>
@@ -152,6 +158,7 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
   const commitButton = query<HTMLButtonElement>(shadow, '[data-action="commit"]');
   const backdrop = query<HTMLDivElement>(shadow, '.backdrop');
   const duplicateBanner = query<HTMLParagraphElement>(shadow, '.duplicate');
+  const target = query<HTMLParagraphElement>(shadow, '.target');
 
   heading.textContent = options.heading;
   sub.textContent = options.subheading;
@@ -279,9 +286,18 @@ export function openCommitDialog(options: CommitDialogOptions): Promise<void> {
     messageInput.focus();
     messageInput.select();
 
-    options.duplicateCheck
-      ?.then((path) => {
-        if (path && host.isConnected && duplicatePath === null) showDuplicate(path);
+    if (options.preview) target.textContent = 'Checking the repository...';
+    options.preview
+      ?.then((preview) => {
+        if (!host.isConnected) return;
+        if (!preview) {
+          target.textContent = '';
+          return;
+        }
+        const code = document.createElement('code');
+        code.textContent = preview.targetPath;
+        target.replaceChildren('Saves as ', code);
+        if (preview.duplicatePath && duplicatePath === null) showDuplicate(preview.duplicatePath);
       })
       .catch(() => undefined);
   });

@@ -5,11 +5,12 @@ import { HttpError, isTransientError, retryAfter } from '../lib/http';
 import { problemUrl } from '../lib/leetcode';
 import { gitBlobSha } from '../lib/hash';
 import type {
-  DuplicateCheckRequest,
-  DuplicateCheckResponse,
   ProblemInfo,
+  PushPreviewRequest,
+  PushPreviewResponse,
   PushRequest,
   PushResponse,
+  SubmissionResult,
 } from '../lib/messages';
 import { folderName, nextSequence, solutionFileName, statusLabel } from '../lib/naming';
 import { folderFiles, matchProblemFolder, scanRepository, type FolderFile } from '../lib/repo-scan';
@@ -63,6 +64,30 @@ async function locateProblemFolder(
   return { folder: fallback, files };
 }
 
+/**
+ * The next file name for this submission in `folder`: numbered per language
+ * after the files already there, so nothing is overwritten.
+ */
+function planSolutionFile(
+  folder: string,
+  existing: readonly FolderFile[],
+  problem: ProblemInfo,
+  submission: SubmissionResult,
+): { fileName: string; path: string } {
+  const names = existing.map((f) => f.name);
+  const sequence = nextSequence(names, problem.titleSlug, submission.lang);
+  const status = statusLabel(submission.statusCode, submission.statusMsg);
+  const fileName = solutionFileName(problem.titleSlug, submission.lang, sequence, status);
+  return { fileName, path: `${folder}/${fileName}` };
+}
+
+/** Path of a file in `folder` with exactly this code, or null. */
+async function findCopy(folder: string, existing: readonly FolderFile[], code: string): Promise<string | null> {
+  const sha = await gitBlobSha(code);
+  const same = existing.find((f) => f.sha === sha);
+  return same ? `${folder}/${same.name}` : null;
+}
+
 async function buildFiles(
   client: GitHubClient,
   rootTree: string | null,
@@ -70,18 +95,13 @@ async function buildFiles(
 ): Promise<{ files: FileChange[]; solutionPath: string }> {
   const { problem, submission, notes } = req;
   const { folder, files: existing } = await locateProblemFolder(client, rootTree, problem);
-  const names = existing.map((f) => f.name);
 
   if (!req.allowDuplicate) {
-    const sha = await gitBlobSha(submission.code);
-    const same = existing.find((f) => f.sha === sha);
-    if (same) throw new DuplicateError(`${folder}/${same.name}`);
+    const copy = await findCopy(folder, existing, submission.code);
+    if (copy) throw new DuplicateError(copy);
   }
 
-  const sequence = nextSequence(names, problem.titleSlug, submission.lang);
-  const status = statusLabel(submission.statusCode, submission.statusMsg);
-  const fileName = solutionFileName(problem.titleSlug, submission.lang, sequence, status);
-  const solutionPath = `${folder}/${fileName}`;
+  const { fileName, path: solutionPath } = planSolutionFile(folder, existing, problem, submission);
   const files: FileChange[] = [{ path: solutionPath, content: submission.code }];
 
   if (notes) {
@@ -125,26 +145,26 @@ function failureMessage(err: unknown, client: GitHubClient | null): string {
   return describeGitHubError(err, client.fullName);
 }
 
-/** Path of a file in the problem's folder with exactly this code, or null. */
-export async function findCommittedCopy(req: DuplicateCheckRequest): Promise<DuplicateCheckResponse> {
+/**
+ * What pushing this submission would do right now: the file it would be saved
+ * as, and any file that already has identical code. Nothing is written.
+ */
+export async function previewPush(req: PushPreviewRequest): Promise<PushPreviewResponse> {
   let client: GitHubClient | null = null;
   try {
     const repo = await connect();
     client = repo.client;
-    let head: string | null;
+    let rootTree: string | null = null;
     try {
-      head = await client.getRef(repo.branch);
+      const head = await client.getRef(repo.branch);
+      if (head) rootTree = await client.getCommitTree(head);
     } catch (err) {
-      if (err instanceof EmptyRepositoryError) return { ok: true, duplicatePath: null };
-      throw err;
+      if (!(err instanceof EmptyRepositoryError)) throw err;
     }
-    if (!head) return { ok: true, duplicatePath: null };
 
-    const rootTree = await client.getCommitTree(head);
     const { folder, files } = await locateProblemFolder(client, rootTree, req.problem);
-    const sha = await gitBlobSha(req.code);
-    const same = files.find((f) => f.sha === sha);
-    return { ok: true, duplicatePath: same ? `${folder}/${same.name}` : null };
+    const { path } = planSolutionFile(folder, files, req.problem, req.submission);
+    return { ok: true, targetPath: path, duplicatePath: await findCopy(folder, files, req.submission.code) };
   } catch (err) {
     return { ok: false, error: failureMessage(err, client) };
   }

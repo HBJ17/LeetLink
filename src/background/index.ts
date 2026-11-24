@@ -2,23 +2,23 @@
 // retries queued pushes. It can be stopped whenever it is idle, so it keeps
 // no state in memory.
 
-import type { BackgroundRequest, DuplicateCheckResponse, PushResponse, QueuedPushResult } from '../lib/messages';
+import type { BackgroundRequest, PushPreviewResponse, PushResponse, QueuedPushResult } from '../lib/messages';
 import type { QueuedPush } from '../lib/storage';
-import { findCommittedCopy } from './push';
+import { previewPush } from './push';
 import { processQueue, pushOrQueue, RETRY_ALARM } from './queue';
 
 function isBackgroundRequest(value: unknown): value is BackgroundRequest {
   if (typeof value !== 'object' || value === null) return false;
   const type = (value as { type?: unknown }).type;
-  return type === 'push' || type === 'checkDuplicate';
+  return type === 'push' || type === 'previewPush';
 }
 
-function handle(request: BackgroundRequest): Promise<PushResponse | DuplicateCheckResponse> {
+function handle(request: BackgroundRequest): Promise<PushResponse | PushPreviewResponse> {
   switch (request.type) {
     case 'push':
       return pushOrQueue(request.payload);
-    case 'checkDuplicate':
-      return findCommittedCopy(request.payload);
+    case 'previewPush':
+      return previewPush(request.payload);
   }
 }
 
@@ -49,7 +49,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (r: PushResponse | DuplicateCheckResponse) => void) => {
+  (message: unknown, sender, sendResponse: (r: PushResponse | PushPreviewResponse) => void) => {
     if (sender.id !== chrome.runtime.id || !isBackgroundRequest(message)) return false;
 
     handle(message)
